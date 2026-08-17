@@ -15,8 +15,8 @@ Project development in progress.
 To be determined.
 
 ## Team
-Minenhle Mokoena 
-Husain Moolla
-Salathiso Zulu
-Ayabonga Mkhungu
-Mikhail Govender 
+-Minenhle Mokoena 
+-Husain Moolla
+-Salathiso Zulu
+-Ayabonga Mkhungu
+-Mikhail Govender 
