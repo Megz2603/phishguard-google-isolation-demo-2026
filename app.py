@@ -27,9 +27,22 @@ initialise_database()
 unlock_oauth_credentials()
 
 
+# WELCOME PAGE
 @app.route("/")
 def home():
     return render_template("index.html")
+
+
+# EMAIL SCANNER DASHBOARD
+@app.route("/scanner")
+def scanner():
+    return render_template("scanner.html")
+
+
+# ABOUT PAGE
+@app.route("/about")
+def about():
+    return render_template("about.html")
 
 
 @app.route("/api/health")
@@ -54,19 +67,19 @@ def connect_gmail():
         login_url, _ = authorization_url()
         return redirect(login_url)
     except MailboxError as error:
-        return redirect(url_for("home", mail_error=str(error)))
+        return redirect(url_for("scanner", mail_error=str(error)))
 
 
 @app.route("/auth/google/callback")
 def gmail_callback():
     if request.args.get("error"):
-        return redirect("/?mail_error=Google sign-in was canceled.")
+        return redirect(url_for("scanner", mail_error="Google sign-in was canceled."))
     try:
         finish_authorization(request.args.get("state"), request.args.get("code"))
         start_sync("google")
-        return redirect(url_for("home", connected="google"))
+        return redirect(url_for("scanner", connected="google"))
     except MailboxError as error:
-        return redirect(url_for("home", mail_error=str(error)))
+        return redirect(url_for("scanner", mail_error=str(error)))
 
 
 @app.route("/mail/accounts", methods=["GET"])
