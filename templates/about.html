@@ -1,0 +1,306 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>About PhishGuard</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='styles.css') }}">
+
+    <style>
+        .about-page {
+            min-height: 100vh;
+            background: #f8fcfc;
+            color: #153b46;
+        }
+
+        .about-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 22px 8%;
+            background: white;
+            border-bottom: 1px solid #e5eeee;
+        }
+
+        .about-logo {
+            color: #087f8c;
+            font-size: 25px;
+            font-weight: 800;
+            text-decoration: none;
+        }
+
+        .about-links {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+        }
+
+        .about-links a {
+            color: #31545d;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .about-links a:hover {
+            color: #087f8c;
+        }
+
+        .about-hero {
+            padding: 85px 8%;
+            text-align: center;
+            background: linear-gradient(135deg, #e9fafa, #f7fcff);
+        }
+
+        .about-tag {
+            display: inline-block;
+            background: #d6f3f1;
+            color: #087f8c;
+            padding: 9px 18px;
+            border-radius: 30px;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        .about-hero h1 {
+            font-size: clamp(38px, 5vw, 58px);
+            margin-bottom: 20px;
+        }
+
+        .about-hero h1 span {
+            color: #087f8c;
+        }
+
+        .about-hero p {
+            max-width: 720px;
+            margin: auto;
+            color: #55717a;
+            line-height: 1.8;
+            font-size: 17px;
+        }
+
+        .about-content {
+            max-width: 1050px;
+            margin: auto;
+            padding: 65px 8%;
+        }
+
+        .about-section {
+            margin-bottom: 45px;
+        }
+
+        .about-section h2 {
+            color: #087f8c;
+            font-size: 28px;
+            margin-bottom: 15px;
+        }
+
+        .about-section p {
+            color: #55717a;
+            line-height: 1.9;
+            font-size: 16px;
+        }
+
+        .about-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 22px;
+            margin-top: 30px;
+        }
+
+        .about-card {
+            background: white;
+            padding: 27px;
+            border: 1px solid #e2eeee;
+            border-radius: 15px;
+            transition: 0.3s ease;
+        }
+
+        .about-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 12px 30px rgba(8, 127, 140, 0.1);
+        }
+
+        .about-card .icon {
+            font-size: 30px;
+            margin-bottom: 15px;
+        }
+
+        .about-card h3 {
+            color: #087f8c;
+            margin-bottom: 10px;
+        }
+
+        .about-card p {
+            color: #66818a;
+            line-height: 1.7;
+            font-size: 14px;
+        }
+
+        .about-cta {
+            text-align: center;
+            padding: 55px 8%;
+            background: #e9fafa;
+        }
+
+        .about-cta h2 {
+            margin-bottom: 15px;
+        }
+
+        .about-button {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 14px 24px;
+            background: #087f8c;
+            color: white;
+            border-radius: 9px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: 0.3s ease;
+        }
+
+        .about-button:hover {
+            background: #07505b;
+            transform: translateY(-3px);
+        }
+
+        .about-footer {
+            background: #123c49;
+            color: #d9eeee;
+            text-align: center;
+            padding: 25px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 750px) {
+            .about-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .about-nav {
+                padding: 18px 5%;
+            }
+
+            .about-links {
+                gap: 14px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="about-page">
+
+    <nav class="about-nav">
+        <a href="/" class="about-logo">🛡 PhishGuard</a>
+
+        <div class="about-links">
+            <a href="/">Home</a>
+            <a href="/scanner">Scanner</a>
+        </div>
+    </nav>
+
+    <section class="about-hero">
+        <div class="about-tag">GET TO KNOW PHISHGUARD</div>
+
+        <h1>Making digital security <span>smarter.</span></h1>
+
+        <p>
+            PhishGuard is an email security application designed
+            to help users identify suspicious emails, understand
+            potential phishing threats and make safer decisions
+            when interacting with their inbox.
+        </p>
+    </section>
+
+    <main class="about-content">
+
+        <section class="about-section">
+            <h2>Why PhishGuard?</h2>
+
+            <p>
+                Phishing remains a common cybersecurity threat.
+                Attackers use deceptive emails to trick individuals
+                into revealing sensitive information, clicking
+                malicious links or downloading harmful attachments.
+                PhishGuard aims to make identifying suspicious email
+                activity easier by analysing email characteristics
+                and highlighting potential warning signs.
+            </p>
+        </section>
+
+        <section class="about-section">
+            <h2>Our Purpose</h2>
+
+            <p>
+                Our purpose is to provide users with a practical
+                tool that supports safer email practices. By
+                presenting risk assessments and organising
+                suspicious messages into categories, PhishGuard
+                helps users make more informed decisions about
+                the emails they receive.
+            </p>
+        </section>
+
+        <section class="about-section">
+            <h2>What PhishGuard Offers</h2>
+
+            <div class="about-grid">
+
+                <div class="about-card">
+                    <div class="icon"></div>
+                    <h3>Email Analysis</h3>
+                    <p>
+                        Examines email characteristics to identify
+                        indicators commonly associated with phishing.
+                    </p>
+                </div>
+
+                <div class="about-card">
+                    <div class="icon"></div>
+                    <h3>Risk Scoring</h3>
+                    <p>
+                        Assigns risk scores to help users understand
+                        the potential level of concern associated
+                        with an email.
+                    </p>
+                </div>
+
+                <div class="about-card">
+                    <div class="icon"></div>
+                    <h3>Email Organisation</h3>
+                    <p>
+                        Separates emails into categories such as
+                        inbox, review and quarantine to support
+                        easier email management.
+                    </p>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <section class="about-cta">
+        <h2>Ready to take a closer look?</h2>
+
+        <p>
+            Explore your email security with PhishGuard.
+        </p>
+
+        <a href="/scanner" class="about-button">
+            Open Email Scanner →
+        </a>
+    </section>
+
+    <footer class="about-footer">
+        © 2026 PhishGuard. Stay alert. Stay protected.
+    </footer>
+
+</div>
+</body>
+</html>

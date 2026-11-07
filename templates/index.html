@@ -1,0 +1,298 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>PhishGuard | Stay Ahead of Phishing</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='styles.css') }}">
+
+    <style>
+        .welcome-page {
+            min-height: 100vh;
+            background: #f8fcfc;
+            color: #153b46;
+        }
+
+        .welcome-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 22px 8%;
+            background: white;
+            border-bottom: 1px solid #e5eeee;
+        }
+
+        .welcome-logo {
+            font-size: 25px;
+            font-weight: 800;
+            color: #087f8c;
+            text-decoration: none;
+        }
+
+        .welcome-nav a {
+            text-decoration: none;
+            color: #31545d;
+            font-weight: 600;
+        }
+
+        .welcome-nav .nav-cta {
+            background: #087f8c;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 9px;
+            transition: 0.3s ease;
+        }
+
+        .welcome-nav .nav-cta:hover,
+        .welcome-button:hover {
+            background: #07505b;
+            transform: translateY(-3px);
+        }
+
+        .welcome-hero {
+            padding: 100px 8% 90px;
+            text-align: center;
+            background: linear-gradient(
+                135deg,
+                #e9fafa,
+                #f7fcff,
+                #e7f4f8
+            );
+        }
+
+        .welcome-tag {
+            display: inline-block;
+            padding: 9px 17px;
+            border-radius: 30px;
+            background: #d6f3f1;
+            color: #087f8c;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 25px;
+        }
+
+        .welcome-hero h1 {
+            font-size: clamp(38px, 6vw, 68px);
+            line-height: 1.12;
+            max-width: 850px;
+            margin: 0 auto 22px;
+            color: #123c49;
+        }
+
+        .welcome-hero h1 span {
+            color: #087f8c;
+        }
+
+        .welcome-hero p {
+            max-width: 650px;
+            margin: 0 auto 32px;
+            color: #55717a;
+            font-size: 17px;
+            line-height: 1.8;
+        }
+
+        .welcome-button {
+            display: inline-block;
+            background: #087f8c;
+            color: white;
+            text-decoration: none;
+            padding: 16px 27px;
+            border-radius: 10px;
+            font-weight: 700;
+            transition: 0.3s ease;
+        }
+
+        .welcome-secondary {
+            display: inline-block;
+            margin-left: 12px;
+            color: #087f8c;
+            text-decoration: none;
+            font-weight: 700;
+            padding: 16px 20px;
+        }
+
+        .welcome-features {
+            padding: 75px 8%;
+            text-align: center;
+        }
+
+        .welcome-features h2 {
+            font-size: 32px;
+            color: #153b46;
+            margin-bottom: 12px;
+        }
+
+        .welcome-intro {
+            color: #66818a;
+            margin-bottom: 40px;
+        }
+
+        .welcome-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        .welcome-card {
+            background: white;
+            padding: 30px;
+            border: 1px solid #e2eeee;
+            border-radius: 16px;
+            text-align: left;
+            transition: 0.3s ease;
+        }
+
+        .welcome-card:hover {
+            transform: translateY(-7px);
+            box-shadow: 0 14px 35px rgba(8, 127, 140, 0.10);
+        }
+
+        .welcome-icon {
+            font-size: 30px;
+            margin-bottom: 18px;
+        }
+
+        .welcome-card h3 {
+            color: #087f8c;
+            margin-bottom: 12px;
+        }
+
+        .welcome-card p {
+            color: #66818a;
+            line-height: 1.7;
+            font-size: 14px;
+        }
+
+        .welcome-footer {
+            padding: 25px;
+            text-align: center;
+            background: #123c49;
+            color: #d9eeee;
+            font-size: 13px;
+        }
+
+        @media (max-width: 750px) {
+            .welcome-cards {
+                grid-template-columns: 1fr;
+            }
+
+            .welcome-hero {
+                padding: 75px 6%;
+            }
+
+            .welcome-secondary {
+                margin-left: 0;
+            }
+
+            .welcome-nav {
+                padding: 18px 5%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .welcome-card,
+            .welcome-button,
+            .welcome-nav .nav-cta {
+                transition: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="welcome-page">
+
+<nav class="welcome-nav">
+    <a href="/" class="welcome-logo">🛡 PhishGuard</a>
+
+    <div class="welcome-links">
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+        <a href="/scanner" class="nav-cta">
+            Open Scanner →
+        </a>
+    </div>
+</nav>
+
+    <section class="welcome-hero">
+
+        <div class="welcome-tag">
+            YOUR DIGITAL SECURITY COMPANION
+        </div>
+
+        <h1>
+            Don't let phishing
+            <span>catch you off guard.</span>
+        </h1>
+
+        <p>
+            Stay one step ahead of cyber threats with PhishGuard.
+            Identify suspicious emails, evaluate potential risks
+            and take control of your email security.
+        </p>
+
+        <a href="/scanner" class="welcome-button">
+            Launch Email Scanner →
+        </a>
+
+        <a href="#features" class="welcome-secondary">
+            Explore Features ↓
+        </a>
+
+    </section>
+
+    <section class="welcome-features" id="features">
+
+        <h2>Security starts with awareness.</h2>
+
+        <p class="welcome-intro">
+            Discover how PhishGuard helps you recognise and manage
+            suspicious email activity.
+        </p>
+
+        <div class="welcome-cards">
+
+            <div class="welcome-card">
+                <div class="welcome-icon"></div>
+                <h3>Email Scanning</h3>
+                <p>
+                    Analyse emails for suspicious characteristics
+                    and identify potential phishing attempts.
+                </p>
+            </div>
+
+            <div class="welcome-card">
+                <div class="welcome-icon"></div>
+                <h3>Risk Assessment</h3>
+                <p>
+                    View risk scores and understand why an email
+                    may be considered suspicious.
+                </p>
+            </div>
+
+            <div class="welcome-card">
+                <div class="welcome-icon"></div>
+                <h3>Email Protection</h3>
+                <p>
+                    Organise detected emails into different
+                    categories to help manage potential threats.
+                </p>
+            </div>
+
+        </div>
+
+    </section>
+
+    <footer class="welcome-footer">
+        © 2026 PhishGuard. Stay alert. Stay protected.
+    </footer>
+
+</div>
+</body>
+</html>
