@@ -8,13 +8,58 @@ const submitButton = document.querySelector("#submit-button");
 let activeStatus = "all";
 let allEmails = [];
 let syncPollers = {};
+let gmailAccount = null;
+let gmailSync = null;
 
-const statusLabels = {
-  all: "All emails",
-  inbox: "Inbox",
-  review: "Needs review",
-  quarantine: "Quarantine"
-};
+const statusLabels = {};
+
+function updateStatusLabels() {
+  for (const status of ["all", "inbox", "review", "quarantine"]) {
+    statusLabels[status] = window.translate(status);
+  }
+}
+
+function translateReason(reason) {
+  const keywords = "Suspicious keywords detected: ";
+  if (reason.startsWith(keywords)) {
+    const match = reason.slice(keywords.length).match(/^(.*?) \((.*?)\)\.?$/);
+    if (match) {
+      return window.translate("reason.keywords", {
+        terms: match[1],
+        language: match[2]
+      });
+    }
+  }
+  const density = reason.match(
+    /^Keyword density increased the score by (\d+) points\.$/
+  );
+  if (density) {
+    return window.translate("reason.density", { points: density[1] });
+  }
+  const combination = reason.match(
+    /^Multiple high-risk keywords with supporting signals increased the score by (\d+) points\.$/
+  );
+  if (combination) {
+    return window.translate("reason.combination", { points: combination[1] });
+  }
+  const staticReasons = {
+    "Email contains a link.": "reason.link",
+    "URL contains an @ symbol.": "reason.urlAt",
+    "URL is not using HTTPS.": "reason.noHttps",
+    "Sender address appears invalid.": "reason.invalidSender"
+  };
+  if (staticReasons[reason]) return window.translate(staticReasons[reason]);
+
+  const path = reason.match(
+    /^URL path contains a suspicious sign-in or account route: (.*?)\.$/
+  );
+  if (path) return window.translate("reason.urlPath", { terms: path[1] });
+  const file = reason.match(/^Suspicious file type detected: (.*?)$/);
+  if (file) return window.translate("reason.fileType", { extension: file[1] });
+  const brand = reason.match(/^Email may be impersonating (.*?)\.$/);
+  if (brand) return window.translate("reason.brand", { brand: brand[1] });
+  return reason;
+}
 
 function setNotice(message, isError = false) {
   notice.textContent = message;
@@ -30,7 +75,9 @@ async function apiRequest(url, options = {}) {
     : null;
 
   if (!response.ok) {
-    throw new Error(result?.error || `Request failed (${response.status})`);
+    const error = new Error(result?.error || `Request failed (${response.status})`);
+    error.code = result?.code;
+    throw error;
   }
   return result;
 }
@@ -60,14 +107,20 @@ function setCounts(emails) {
 }
 
 function formatDate(value) {
-  if (!value) return "Date unavailable";
+  if (!value) return window.translate("date.unavailable");
   const date = new Date(`${value.replace(" ", "T")}Z`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat(undefined, {
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat(`${document.documentElement.lang}-ZA`, {
         dateStyle: "medium",
         timeStyle: "short"
-      }).format(date);
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(date);
+  }
 }
 
 function statusBadge(status) {
@@ -80,8 +133,8 @@ function makeDetails(email) {
   details.hidden = true;
 
   const fields = [
-    ["Email body", email.body || "No message body"],
-    ["Detection reasons", null]
+    [window.translate("email.bodyLabel"), email.body || window.translate("email.noBody")],
+    [window.translate("email.reasons"), null]
   ];
 
   for (const [label, value] of fields) {
@@ -96,10 +149,10 @@ function makeDetails(email) {
       ? email.reasons
       : (email.reasons || "").split(";").map((reason) => reason.trim()).filter(Boolean);
     if (!reasonList.length) {
-      reasons.append(createElement("span", "reason-chip", "No specific warning signals"));
+      reasons.append(createElement("span", "reason-chip", window.translate("email.noWarnings")));
     } else {
       for (const reason of reasonList) {
-        reasons.append(createElement("span", "reason-chip", reason));
+        reasons.append(createElement("span", "reason-chip", translateReason(reason)));
       }
     }
     details.append(reasons);
@@ -112,17 +165,17 @@ function makeEmailRow(email) {
   const main = createElement("div", "email-main");
 
   const senderBlock = createElement("div", "sender-block");
-  senderBlock.append(createElement("div", "sender", email.sender || "Unknown sender"));
+  senderBlock.append(createElement("div", "sender", email.sender || window.translate("email.unknownSender")));
   senderBlock.append(createElement("div", "date", formatDate(email.created_at)));
 
   const subjectBlock = createElement("div", "subject-block");
-  subjectBlock.append(createElement("div", "subject", email.subject || "(No subject)"));
-  subjectBlock.append(createElement("div", "preview", (email.body || "").replace(/\s+/g, " ").trim() || "No message body"));
+  subjectBlock.append(createElement("div", "subject", email.subject || window.translate("email.noSubject")));
+  subjectBlock.append(createElement("div", "preview", (email.body || "").replace(/\s+/g, " ").trim() || window.translate("email.noBody")));
 
   const score = Number(email.risk_score) || 0;
   const riskBlock = createElement("div", "risk-block");
   const riskMeta = createElement("div", "risk-meta");
-  riskMeta.append(createElement("span", "", "Risk score"));
+  riskMeta.append(createElement("span", "", window.translate("risk.score")));
   riskMeta.append(createElement("span", "risk-score", `${score}/100`));
   const track = createElement("div", "risk-track");
   const fill = createElement("div", `risk-fill ${score >= 70 ? "high" : score >= 30 ? "medium" : ""}`);
@@ -134,7 +187,8 @@ function makeEmailRow(email) {
   actions.append(statusBadge(email.status));
   const menu = createElement("button", "row-menu", "•••");
   menu.type = "button";
-  menu.title = "Show email details";
+  menu.title = window.translate("details.show");
+  menu.setAttribute("aria-label", window.translate("details.show"));
   menu.setAttribute("aria-expanded", "false");
   actions.append(menu);
 
@@ -143,18 +197,19 @@ function makeEmailRow(email) {
   menu.addEventListener("click", () => {
     details.hidden = !details.hidden;
     menu.setAttribute("aria-expanded", String(!details.hidden));
-    menu.title = details.hidden ? "Show email details" : "Hide email details";
+    menu.title = window.translate(details.hidden ? "details.show" : "details.hide");
+    menu.setAttribute("aria-label", menu.title);
   });
   row.append(main, details);
 
   const controls = createElement("div", "row-controls");
   const statusSelect = document.createElement("select");
   statusSelect.className = "status-select";
-  statusSelect.setAttribute("aria-label", `Move email from ${email.sender}`);
+  statusSelect.setAttribute("aria-label", `${window.translate("moveTo")} ${email.sender}`);
   for (const status of ["inbox", "review", "quarantine"]) {
     const option = document.createElement("option");
     option.value = status;
-    option.textContent = `Move to ${statusLabels[status]}`;
+    option.textContent = `${window.translate("moveTo")} ${statusLabels[status]}`;
     statusSelect.append(option);
   }
   statusSelect.value = email.status;
@@ -165,20 +220,20 @@ function makeEmailRow(email) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: statusSelect.value })
       });
-      setNotice("Email status updated.");
+      setNotice(window.translate("notice.updated"));
       await loadEmails();
     } catch (error) {
       setNotice(error.message, true);
       statusSelect.value = email.status;
     }
   });
-  const deleteButton = createElement("button", "delete-button", "Delete");
+  const deleteButton = createElement("button", "delete-button", window.translate("delete"));
   deleteButton.type = "button";
   deleteButton.addEventListener("click", async () => {
-    if (!window.confirm(`Delete the email from ${email.sender}? This cannot be undone.`)) return;
+    if (!window.confirm(window.translate("delete.confirm", { sender: email.sender }))) return;
     try {
       await apiRequest(`/emails/${email.id}`, { method: "DELETE" });
-      setNotice("Email deleted.");
+      setNotice(window.translate("notice.deleted"));
       await loadEmails();
     } catch (error) {
       setNotice(error.message, true);
@@ -198,19 +253,39 @@ function renderEmails(emails) {
   document.querySelector("#page-title").textContent = statusLabels[activeStatus];
   document.querySelector("#list-heading").textContent = statusLabels[activeStatus];
   document.querySelector("#list-description").textContent = activeStatus === "all"
-    ? "A complete view of scanned messages"
-    : `${visibleEmails.length} ${activeStatus === "review" ? "email(s) to review" : `email(s) in ${activeStatus}`}`;
+    ? window.translate("list.allDescription")
+    : activeStatus === "review"
+      ? window.translate("list.reviewCount", { count: visibleEmails.length })
+      : window.translate("list.statusCount", {
+        count: visibleEmails.length,
+        status: statusLabels[activeStatus]
+      });
 
   if (!visibleEmails.length) {
     const empty = createElement("div", "empty-state");
     empty.append(createElement("div", "empty-icon", "✦"));
-    empty.append(createElement("strong", "", activeStatus === "all" ? "No emails scanned yet" : `No emails in ${statusLabels[activeStatus]}`));
-    empty.append(createElement("p", "", "Scan an email to see its risk assessment here."));
+    empty.append(createElement(
+      "strong",
+      "",
+      activeStatus === "all"
+        ? window.translate("empty.noEmails")
+        : window.translate("empty.noFolder", { status: statusLabels[activeStatus] })
+    ));
+    empty.append(createElement("p", "", window.translate("empty.prompt")));
     list.append(empty);
     return;
   }
   for (const email of visibleEmails) list.append(makeEmailRow(email));
 }
+
+document.addEventListener("languagechange", () => {
+  updateStatusLabels();
+  renderEmails(allEmails);
+  if (document.querySelector("#account-google")) {
+    setGmailCard(gmailAccount, gmailSync);
+  }
+});
+updateStatusLabels();
 
 async function loadEmails() {
   try {
@@ -218,16 +293,32 @@ async function loadEmails() {
     allEmails = await apiRequest("/emails");
     setCounts(allEmails);
     renderEmails(allEmails);
+    return true;
   } catch (error) {
     list.replaceChildren();
     const empty = createElement("div", "empty-state");
-    empty.append(createElement("strong", "", "Could not load emails"));
+    empty.append(createElement("strong", "", window.translate("error.loadEmails")));
     empty.append(createElement("p", "", error.message));
     list.append(empty);
+    return false;
+  }
+}
+
+async function refreshEmails() {
+  const button = document.querySelector("#refresh-button");
+  button.disabled = true;
+  button.classList.add("is-refreshing");
+  try {
+    if (await loadEmails()) setNotice(window.translate("emails.refreshed"));
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-refreshing");
   }
 }
 
 function setGmailCard(account, sync) {
+  gmailAccount = account;
+  gmailSync = sync;
   const card = document.querySelector("#account-google");
   const state = card.querySelector(".connection-state");
   const email = card.querySelector(".connection-email");
@@ -248,32 +339,36 @@ function setGmailCard(account, sync) {
   state.className = "connection-state";
 
   if (needsImapReconnect) {
-    state.textContent = "Sign in with Google again";
+    state.textContent = window.translate("mail.reconnect");
     state.classList.add("syncing");
     syncButton.disabled = true;
   } else if (sync?.status === "running") {
-    state.textContent = "Syncing mailbox...";
+    state.textContent = window.translate("mail.syncing");
     state.classList.add("syncing");
-    const progress = createElement("span", "sync-progress", `${sync.processed || 0} messages processed`);
+    const progress = createElement(
+      "span",
+      "sync-progress",
+      window.translate("mail.progress", { count: sync.processed || 0 })
+    );
     card.querySelector(".connection-info").append(progress);
     syncButton.disabled = true;
   } else if (sync?.status === "error") {
-    state.textContent = "Sync failed";
+    state.textContent = window.translate("mail.syncFailed");
     state.classList.add("error");
     syncButton.disabled = false;
     if (sync.error) {
       card.querySelector(".connection-info").append(createElement("span", "sync-progress", sync.error));
     }
   } else if (sync?.status === "complete") {
-    state.textContent = `Connected · ${sync.processed} messages synced`;
+    state.textContent = window.translate("mail.synced", { count: sync.processed });
     state.classList.add("connected");
     syncButton.disabled = false;
   } else if (ready) {
-    state.textContent = "Connected";
+    state.textContent = window.translate("mail.connected");
     state.classList.add("connected");
     syncButton.disabled = false;
   } else {
-    state.textContent = "Not connected";
+    state.textContent = window.translate("mail.notConnected");
     syncButton.disabled = false;
   }
 }
@@ -296,9 +391,11 @@ async function loadMailboxAccounts() {
             delete syncPollers.google;
             await loadEmails();
             if (updated.status === "complete") {
-              setNotice(`Gmail sync complete: ${updated.processed} messages scanned.`);
+              setNotice(window.translate("notice.syncComplete", {
+                count: updated.processed
+              }));
             } else if (updated.status === "error") {
-              setNotice(updated.error || "Mailbox sync failed.", true);
+              setNotice(updated.error || window.translate("mail.syncFailed"), true);
             }
           }
         } catch (error) {
@@ -315,7 +412,7 @@ document.querySelectorAll(".sync-button").forEach((button) => {
   button.addEventListener("click", async () => {
     try {
       await apiRequest("/mail/sync/google", { method: "POST" });
-      setNotice("Started scanning your Gmail mailbox. This may take a while for a large mailbox.");
+      setNotice(window.translate("notice.syncStarted"));
       await loadMailboxAccounts();
     } catch (error) {
       setNotice(error.message, true);
@@ -325,11 +422,11 @@ document.querySelectorAll(".sync-button").forEach((button) => {
 
 document.querySelectorAll(".disconnect-button").forEach((button) => {
   button.addEventListener("click", async () => {
-    if (!window.confirm("Disconnect Gmail? Previously imported emails will remain in this app.")) return;
+    if (!window.confirm(window.translate("notice.disconnectConfirm"))) return;
     try {
       await apiRequest("/mail/accounts/google", { method: "DELETE" });
       await loadMailboxAccounts();
-      setNotice("Gmail disconnected. Imported messages remain saved locally.");
+      setNotice(window.translate("notice.disconnected"));
     } catch (error) {
       setNotice(error.message, true);
     }
@@ -353,13 +450,40 @@ document.querySelector("#new-email-button").addEventListener("click", () => {
 });
 document.querySelector("#close-dialog").addEventListener("click", () => composeDialog.close());
 document.querySelector("#cancel-dialog").addEventListener("click", () => composeDialog.close());
-document.querySelector("#refresh-button").addEventListener("click", loadEmails);
+document.querySelector("#refresh-button").addEventListener("click", refreshEmails);
+
+document.querySelector("#clear-emails-button").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  if (!window.confirm(window.translate("emails.clearConfirm"))) return;
+  button.disabled = true;
+  try {
+    const result = await apiRequest("/emails", { method: "DELETE" });
+    allEmails = [];
+    activeStatus = "all";
+    document.querySelector(".nav-item.active")?.classList.remove("active");
+    document.querySelector('[data-status="all"]')?.classList.add("active");
+    setCounts(allEmails);
+    renderEmails(allEmails);
+    setNotice(window.translate("emails.clearSuccess", {
+      count: result.deleted_count
+    }));
+  } catch (error) {
+    setNotice(
+      error.code === "sync_in_progress"
+        ? window.translate("emails.syncActive")
+        : error.message,
+      true
+    );
+  } finally {
+    button.disabled = false;
+  }
+});
 
 emailForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   formError.hidden = true;
   submitButton.disabled = true;
-  submitButton.textContent = "Scanning...";
+  submitButton.textContent = window.translate("email.scanning");
 
   const formData = new FormData(emailForm);
   const email = Object.fromEntries(formData.entries());
@@ -375,13 +499,16 @@ emailForm.addEventListener("submit", async (event) => {
     document.querySelector(".nav-item.active")?.classList.remove("active");
     document.querySelector('[data-status="all"]').classList.add("active");
     await loadEmails();
-    setNotice(`Scan complete: risk score ${result.risk_score}/100 — ${statusLabels[result.status]}.`);
+    setNotice(window.translate("email.scanComplete", {
+      score: result.risk_score,
+      status: statusLabels[result.status]
+    }));
   } catch (error) {
     formError.textContent = error.message;
     formError.hidden = false;
   } finally {
     submitButton.disabled = false;
-    submitButton.innerHTML = 'Scan email <span>→</span>';
+    submitButton.innerHTML = `${window.translate("scanEmail")} <span>→</span>`;
   }
 });
 
@@ -389,7 +516,7 @@ loadEmails();
 loadMailboxAccounts();
 const query = new URLSearchParams(window.location.search);
 if (query.has("connected")) {
-  setNotice("Gmail connected. Your mailbox is being scanned.");
+  setNotice(window.translate("notice.connected"));
   window.history.replaceState({}, "", window.location.pathname);
 } else if (query.has("mail_error")) {
   setNotice(query.get("mail_error"), true);

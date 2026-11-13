@@ -1,14 +1,15 @@
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ language_preferences.primary_language }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>PhishGuard | Stay Ahead of Phishing</title>
+    <title data-i18n="landing.title">PhishGuard | Stay Ahead of Phishing</title>
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='language.js') }}" defer></script>
 
     <style>
         .welcome-page {
@@ -193,6 +194,12 @@
             .welcome-nav {
                 padding: 18px 5%;
             }
+
+            .welcome-links {
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                gap: 12px;
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -209,39 +216,46 @@
 <div class="welcome-page">
 
 <nav class="welcome-nav">
-    <a href="/" class="welcome-logo">🛡 PhishGuard</a>
+    <a href="/" class="welcome-logo" data-i18n="brand.name">🛡 PhishGuard</a>
 
     <div class="welcome-links">
-        <a href="/">Home</a>
-        <a href="/about">About</a>
+        <a href="/" data-i18n="nav.home">Home</a>
+        <a href="/about" data-i18n="nav.about">About</a>
+        <label class="language-control">
+            <span data-i18n="language.label">Language</span>
+            <select id="primary-language" aria-label="Primary language" data-i18n-aria-label="language.label">
+                {% for language in languages %}
+                <option value="{{ language.code }}" {% if language.code == language_preferences.primary_language %}selected{% endif %}>{{ language.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
         <a href="/scanner" class="nav-cta">
-            Open Scanner →
+            <span data-i18n="nav.openScanner">Open Scanner →</span>
         </a>
     </div>
 </nav>
 
     <section class="welcome-hero">
 
-        <div class="welcome-tag">
+        <div class="welcome-tag" data-i18n="landing.tag">
             YOUR DIGITAL SECURITY COMPANION
         </div>
 
         <h1>
-            Don't let phishing
-            <span>catch you off guard.</span>
+            <span data-i18n="landing.headline">Don't let phishing catch you off guard.</span>
         </h1>
 
-        <p>
+        <p data-i18n="landing.description">
             Stay one step ahead of cyber threats with PhishGuard.
             Identify suspicious emails, evaluate potential risks
             and take control of your email security.
         </p>
 
-        <a href="/scanner" class="welcome-button">
+        <a href="/scanner" class="welcome-button" data-i18n="landing.launch">
             Launch Email Scanner →
         </a>
 
-        <a href="#features" class="welcome-secondary">
+        <a href="#features" class="welcome-secondary" data-i18n="landing.explore">
             Explore Features ↓
         </a>
 
@@ -249,9 +263,9 @@
 
     <section class="welcome-features" id="features">
 
-        <h2>Security starts with awareness.</h2>
+        <h2 data-i18n="landing.featuresTitle">Security starts with awareness.</h2>
 
-        <p class="welcome-intro">
+        <p class="welcome-intro" data-i18n="landing.featuresDescription">
             Discover how PhishGuard helps you recognise and manage
             suspicious email activity.
         </p>
@@ -260,8 +274,8 @@
 
             <div class="welcome-card">
                 <div class="welcome-icon"></div>
-                <h3>Email Scanning</h3>
-                <p>
+                <h3 data-i18n="landing.card1Title">Email Scanning</h3>
+                <p data-i18n="landing.card1Description">
                     Analyse emails for suspicious characteristics
                     and identify potential phishing attempts.
                 </p>
@@ -269,8 +283,8 @@
 
             <div class="welcome-card">
                 <div class="welcome-icon"></div>
-                <h3>Risk Assessment</h3>
-                <p>
+                <h3 data-i18n="landing.card2Title">Risk Assessment</h3>
+                <p data-i18n="landing.card2Description">
                     View risk scores and understand why an email
                     may be considered suspicious.
                 </p>
@@ -278,8 +292,8 @@
 
             <div class="welcome-card">
                 <div class="welcome-icon"></div>
-                <h3>Email Protection</h3>
-                <p>
+                <h3 data-i18n="landing.card3Title">Email Protection</h3>
+                <p data-i18n="landing.card3Description">
                     Organise detected emails into different
                     categories to help manage potential threats.
                 </p>
@@ -289,7 +303,7 @@
 
     </section>
 
-    <footer class="welcome-footer">
+    <footer class="welcome-footer" data-i18n="footer">
         © 2026 PhishGuard. Stay alert. Stay protected.
     </footer>
 

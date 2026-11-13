@@ -1,6 +1,12 @@
+import json
 import sqlite3
 
 from email_system.encryption import migrate_email_fields
+from scanner.languages import (
+    DEFAULT_PRIMARY_LANGUAGE,
+    DEFAULT_SECONDARY_LANGUAGES,
+    normalize_language_preferences,
+)
 
 
 DATABASE = "emails.db"
@@ -32,6 +38,12 @@ def initialise_database():
                 external_id TEXT
             )
         """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         _add_missing_email_columns(connection)
         connection.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS email_provider_external_id
@@ -50,6 +62,58 @@ def initialise_database():
         raise
     finally:
         connection.close()
+
+
+def get_language_preferences():
+    connection = get_connection()
+    try:
+        rows = dict(connection.execute("""
+            SELECT key, value FROM app_settings
+            WHERE key IN (
+                'primary_language', 'secondary_languages', 'language_selected'
+            )
+        """).fetchall())
+        primary_language = rows.get(
+            "primary_language", DEFAULT_PRIMARY_LANGUAGE
+        )
+        secondary_languages = json.loads(rows.get(
+            "secondary_languages",
+            json.dumps(DEFAULT_SECONDARY_LANGUAGES),
+        ))
+        return normalize_language_preferences(
+            primary_language, secondary_languages
+        ) | {"language_selected": rows.get("language_selected") == "true"}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {
+            "primary_language": DEFAULT_PRIMARY_LANGUAGE,
+            "secondary_languages": list(DEFAULT_SECONDARY_LANGUAGES),
+            "language_selected": False,
+        }
+    finally:
+        connection.close()
+
+
+def save_language_preferences(primary_language, secondary_languages):
+    preferences = normalize_language_preferences(
+        primary_language, secondary_languages
+    )
+    connection = get_connection()
+    try:
+        connection.executemany("""
+            INSERT INTO app_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """, (
+            ("primary_language", preferences["primary_language"]),
+            (
+                "secondary_languages",
+                json.dumps(preferences["secondary_languages"]),
+            ),
+            ("language_selected", "true"),
+        ))
+        connection.commit()
+    finally:
+        connection.close()
+    return preferences
 
 
 def _add_missing_email_columns(connection):

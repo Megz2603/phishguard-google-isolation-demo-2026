@@ -99,14 +99,45 @@ http://127.0.0.1:5000
 
 The dashboard lets you connect Gmail, sync and scan messages, submit emails
 manually, filter results by status, view detection reasons, move emails
-between Inbox, Review and Quarantine, or delete local copies.
+between Inbox, Review and Quarantine, or delete local copies. **Refresh**
+reloads the saved email list; use **Sync mailbox** to fetch new Gmail messages.
+**Clear saved emails** removes every email record from this app, but keeps
+language settings and the Gmail connection. It does not delete Gmail messages;
+a later sync can import them again.
+
+## South African language scanning
+
+On the first visit, choose a website language before opening the landing page.
+The interface supports all 11 official South African languages. Choose a
+primary language and any number of secondary languages in scanner settings;
+the primary language gets first priority, and all 11 keyword catalogs are still
+checked so an unselected South African language is not missed. Preferences are
+saved locally and apply to manual scans and Gmail sync.
+
+The landing, about, and scanner pages, scanner controls and notices, and
+detection reasons are localized to the selected language. Keyword scores are
+less sensitive to a single generic phrase. Credential, account, and payment
+phrases carry more weight than generic urgency or prize language; multiple
+high-risk keywords combined with supporting suspicious keywords receive an
+additional bonus. A modest density adjustment helps distinguish short
+keyword-heavy messages. URL, file, brand, and sender checks remain part of the
+score. Emails in languages outside the 11 supported keyword catalogs are still
+checked for structural signals, but there is no machine-learning language
+detector or translation model, so text-only threats in other languages may not
+be recognized.
+
+Gmail message retrieval uses bounded concurrent requests, and local database
+writes are committed in batches to reduce sync time.
 
 ## Main API endpoints
 
 - `GET /` - Open the web dashboard
 - `GET /api/health` - Check whether the backend is running
+- `GET /api/language-settings` - Read the saved primary and secondary languages
+- `PUT /api/language-settings` - Save language preferences
 - `POST /emails` - Submit an incoming email for scanning
 - `GET /emails` - View all emails
+- `DELETE /emails` - Delete all locally saved emails
 - `GET /emails/inbox` - View safe emails
 - `GET /emails/review` - View emails needing review
 - `GET /emails/quarantine` - View quarantined emails

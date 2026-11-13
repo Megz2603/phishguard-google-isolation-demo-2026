@@ -1,23 +1,11 @@
-SUSPICIOUS_KEYWORDS = [
-    "urgent",
-    "immediately",
-    "account suspended",
-    "account closed",
-    "verify your account",
-    "verify your identity",
-    "password",
-    "credit card",
-    "bank account",
-    "payment required",
-    "click here",
-    "confirm your account",
-    "security alert",
-    "unusual activity",
-    "login",
-    "winner",
-    "congratulations",
-    "you have won"
-]
+from scanner.languages import KEYWORDS_BY_LANGUAGE
+
+
+SUSPICIOUS_KEYWORDS = list(dict.fromkeys(
+    keyword
+    for language_keywords in KEYWORDS_BY_LANGUAGE.values()
+    for keyword, _ in language_keywords
+))
 
 # Selected account and authentication URL paths from SecLists' common web
 # paths list. SecLists is MIT-licensed; see README.md for attribution.

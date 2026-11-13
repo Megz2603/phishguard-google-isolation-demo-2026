@@ -4,6 +4,7 @@ from database import initialise_database
 from email_system.mailbox import (
     MailboxError,
     authorization_url,
+    clear_saved_emails,
     disconnect_account,
     finish_authorization,
     list_accounts,
@@ -19,6 +20,8 @@ from models import (
     delete_email
 )
 from email_system.receiver import receive_email
+from database import get_language_preferences, save_language_preferences
+from scanner.languages import LANGUAGES
 
 app = Flask(__name__)
 
@@ -28,21 +31,56 @@ unlock_oauth_credentials()
 
 
 # WELCOME PAGE
+def render_page(template):
+    return render_template(
+        template,
+        languages=LANGUAGES,
+        language_preferences=get_language_preferences(),
+    )
+
+
 @app.route("/")
 def home():
-    return render_template("index.html")
+    if not get_language_preferences()["language_selected"]:
+        return render_page("language.html")
+    return render_page("index.html")
 
 
 # EMAIL SCANNER DASHBOARD
 @app.route("/scanner")
 def scanner():
-    return render_template("scanner.html")
+    if not get_language_preferences()["language_selected"]:
+        return redirect(url_for("home"))
+    return render_page("scanner.html")
 
 
 # ABOUT PAGE
 @app.route("/about")
 def about():
-    return render_template("about.html")
+    if not get_language_preferences()["language_selected"]:
+        return redirect(url_for("home"))
+    return render_page("about.html")
+
+
+@app.route("/api/language-settings", methods=["GET", "PUT"])
+def language_settings():
+    if request.method == "GET":
+        return jsonify({
+            **get_language_preferences(),
+            "languages": LANGUAGES,
+        })
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Language settings must be a JSON object."}), 400
+    try:
+        preferences = save_language_preferences(
+            data.get("primary_language"),
+            data.get("secondary_languages", []),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    return jsonify({**preferences, "language_selected": True})
 
 
 @app.route("/api/health")
@@ -132,8 +170,17 @@ def create_email():
     return jsonify(result), 201
 
 
-@app.route("/emails", methods=["GET"])
+@app.route("/emails", methods=["GET", "DELETE"])
 def emails():
+    if request.method == "DELETE":
+        try:
+            deleted_count = clear_saved_emails()
+        except MailboxError as error:
+            return jsonify({
+                "error": str(error),
+                "code": "sync_in_progress",
+            }), 409
+        return jsonify({"deleted_count": deleted_count})
     return jsonify(get_all_emails())
 
 

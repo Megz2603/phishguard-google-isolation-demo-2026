@@ -1,116 +1,142 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ language_preferences.primary_language }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f7fb">
-  <title>PhishGuard | Email security</title>
+  <title data-i18n="emailSecurity">PhishGuard | Email security</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='language.js') }}" defer></script>
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <a class="brand" href="/" aria-label="PhishGuard home">
+      <a class="brand" href="/" aria-label="PhishGuard home" data-i18n-aria-label="brand.home">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5.2-3.4 8.6-8 10-4.6-1.4-8-4.8-8-10V6l8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-4.8"/></svg>
         </span>
         <span>phish<span class="brand-light">guard</span></span>
       </a>
 
-      <div class="nav-caption">WORKSPACE</div>
-      <nav class="mail-nav" aria-label="Email folders">
+      <div class="nav-caption" data-i18n="workspace">WORKSPACE</div>
+      <nav class="mail-nav" aria-label="Email folders" data-i18n-aria-label="nav.folders">
         <button class="nav-item active" data-status="all">
-          <span class="nav-icon">◫</span><span>All emails</span><span class="nav-count" id="count-all">0</span>
+          <span class="nav-icon">◫</span><span data-i18n="all">All emails</span><span class="nav-count" id="count-all">0</span>
         </button>
         <button class="nav-item" data-status="inbox">
-          <span class="nav-icon">⌑</span><span>Inbox</span><span class="nav-count" id="count-inbox">0</span>
+          <span class="nav-icon">⌑</span><span data-i18n="inbox">Inbox</span><span class="nav-count" id="count-inbox">0</span>
         </button>
         <button class="nav-item" data-status="review">
-          <span class="nav-icon">◷</span><span>Needs review</span><span class="nav-count" id="count-review">0</span>
+          <span class="nav-icon">◷</span><span data-i18n="review">Needs review</span><span class="nav-count" id="count-review">0</span>
         </button>
         <button class="nav-item" data-status="quarantine">
-          <span class="nav-icon">⛨</span><span>Quarantine</span><span class="nav-count" id="count-quarantine">0</span>
+          <span class="nav-icon">⛨</span><span data-i18n="quarantine">Quarantine</span><span class="nav-count" id="count-quarantine">0</span>
         </button>
       </nav>
 
       <div class="sidebar-note">
         <span class="note-icon">✦</span>
-        <strong>Rule-based protection</strong>
-        <p>Every email is checked for suspicious links, language and sender signals.</p>
+        <strong data-i18n="sidebar.protection">Rule-based protection</strong>
+        <p data-i18n="sidebar.description">Every email is checked for suspicious links, language and sender signals.</p>
       </div>
-      <div class="sidebar-footer"><span class="online-dot"></span> Scanner is active</div>
+      <div class="sidebar-footer"><span class="online-dot"></span> <span data-i18n="sidebar.active">Scanner is active</span></div>
     </aside>
 
     <main class="main-content">
       <header class="topbar">
-        <div class="breadcrumb"><span>Workspace</span><span class="breadcrumb-divider">/</span><strong id="page-title">All emails</strong></div>
+        <div class="breadcrumb"><span data-i18n="workspace">Workspace</span><span class="breadcrumb-divider">/</span><strong id="page-title">All emails</strong></div>
         <div class="topbar-right">
 
-    <nav class="page-navigation" aria-label="Main navigation">
-        <a href="/">Home</a>
-        <a href="/about">About</a>
+    <nav class="page-navigation" aria-label="Main navigation" data-i18n-aria-label="nav.main">
+        <a href="/" data-i18n="nav.home">Home</a>
+        <a href="/about" data-i18n="nav.about">About</a>
     </nav>
+    <label class="language-control">
+      <span data-i18n="language.label">Language</span>
+      <select id="primary-language" aria-label="Primary language" data-i18n-aria-label="language.label">
+        {% for language in languages %}
+        <option value="{{ language.code }}" {% if language.code == language_preferences.primary_language %}selected{% endif %}>{{ language.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <span class="system-status">
-        <span class="online-dot"></span> System operational
+        <span class="online-dot"></span> <span data-i18n="system.operational">System operational</span>
     </span>
-    <span class="avatar" aria-label="User">PG</span>
+    <span class="avatar" aria-label="User" data-i18n-aria-label="user">PG</span>
 </div>
       </header>
 
       <section class="page-content">
+        <section class="language-settings" aria-labelledby="language-settings-title">
+          <div class="language-settings-copy">
+            <h2 id="language-settings-title" data-i18n="language.settings">Language settings</h2>
+            <p data-i18n="language.description">Choose the website language and scan order. The primary language is checked first.</p>
+          </div>
+          <label for="secondary-languages" data-i18n="language.secondary">Secondary scan languages</label>
+          <select id="secondary-languages" multiple size="4" aria-describedby="secondary-language-hint">
+            {% for language in languages %}
+            {% if language.code != language_preferences.primary_language %}
+            <option value="{{ language.code }}" {% if language.code in language_preferences.secondary_languages %}selected{% endif %}>{{ language.name }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+          <p id="secondary-language-hint" data-i18n="language.hint">Select one or more languages. They are checked in the order shown after the primary language.</p>
+          <div id="language-settings-status" class="language-settings-status" role="status" aria-live="polite"></div>
+        </section>
+
         <div class="page-heading">
           <div>
-            <div class="eyebrow">EMAIL SECURITY</div>
-            <h1>Good day, stay protected.</h1>
-            <p class="subtitle">Review incoming emails and catch threats before they reach you.</p>
+            <div class="eyebrow" data-i18n="emailSecurity">EMAIL SECURITY</div>
+            <h1 data-i18n="stayProtected">Good day, stay protected.</h1>
+            <p class="subtitle" data-i18n="scanDescription">Review incoming emails and catch threats before they reach you.</p>
           </div>
           <button class="primary-button" id="new-email-button" type="button">
-            <span class="plus-icon">+</span> Scan an email
+            <span class="plus-icon">+</span> <span data-i18n="scanEmail">Scan an email</span>
           </button>
         </div>
 
-        <section class="mail-connections" aria-label="Connected email accounts">
+        <section class="mail-connections" aria-label="Connected email accounts" data-i18n-aria-label="mail.connectedAccounts">
           <div class="connections-heading">
             <div>
-              <h2>Connect your email</h2>
-              <p>Connect Gmail with read-only Google access. Messages are saved and scanned locally.</p>
+              <h2 data-i18n="mail.connect">Connect your email</h2>
+              <p data-i18n="mail.connectDescription">Connect Gmail with read-only Google access. Messages are saved and scanned locally.</p>
             </div>
-            <span class="privacy-label"><span>⌑</span> READ ONLY</span>
+            <span class="privacy-label"><span>⌑</span> <span data-i18n="mail.readOnly">READ ONLY</span></span>
           </div>
           <div class="connection-grid">
             <article class="connection-card" id="account-google">
               <span class="provider-mark google-mark" aria-hidden="true">G</span>
               <div class="connection-info">
                 <strong>Google Gmail</strong>
-                <span class="connection-state">Not connected</span>
+                <span class="connection-state" data-i18n="mail.notConnected">Not connected</span>
                 <span class="connection-email"></span>
               </div>
               <div class="connection-actions">
-                <a class="connect-button" href="/auth/google">Sign in with Google</a>
-                <button class="sync-button" type="button" hidden>Sync mailbox</button>
-                <button class="disconnect-button" type="button" hidden>Disconnect</button>
+                <a class="connect-button" href="/auth/google" data-i18n="mail.signIn">Sign in with Google</a>
+                <button class="sync-button" type="button" hidden data-i18n="mail.sync">Sync mailbox</button>
+                <button class="disconnect-button" type="button" hidden data-i18n="mail.disconnect">Disconnect</button>
               </div>
             </article>
           </div>
         </section>
 
-        <section class="stats-grid" aria-label="Email summary">
+        <section class="stats-grid" aria-label="Email summary" data-i18n-aria-label="stats.summary">
           <article class="stat-card">
-            <div class="stat-top"><span>Total scanned</span><span class="stat-icon blue">▤</span></div>
-            <div class="stat-value" id="stat-total">0</div><div class="stat-caption">Emails in your workspace</div>
+            <div class="stat-top"><span data-i18n="stats.total">Total scanned</span><span class="stat-icon blue">▤</span></div>
+            <div class="stat-value" id="stat-total">0</div><div class="stat-caption" data-i18n="stats.totalCaption">Emails in your workspace</div>
           </article>
           <article class="stat-card">
-            <div class="stat-top"><span>Inbox</span><span class="stat-icon green">✓</span></div>
-            <div class="stat-value" id="stat-inbox">0</div><div class="stat-caption">Low-risk emails</div>
+            <div class="stat-top"><span data-i18n="inbox">Inbox</span><span class="stat-icon green">✓</span></div>
+            <div class="stat-value" id="stat-inbox">0</div><div class="stat-caption" data-i18n="stats.lowRisk">Low-risk emails</div>
           </article>
           <article class="stat-card">
-            <div class="stat-top"><span>Needs review</span><span class="stat-icon amber">◷</span></div>
-            <div class="stat-value" id="stat-review">0</div><div class="stat-caption">Worth a closer look</div>
+            <div class="stat-top"><span data-i18n="review">Needs review</span><span class="stat-icon amber">◷</span></div>
+            <div class="stat-value" id="stat-review">0</div><div class="stat-caption" data-i18n="stats.reviewCaption">Worth a closer look</div>
           </article>
           <article class="stat-card">
-            <div class="stat-top"><span>Quarantined</span><span class="stat-icon red">⛨</span></div>
-            <div class="stat-value" id="stat-quarantine">0</div><div class="stat-caption">High-risk emails</div>
+            <div class="stat-top"><span data-i18n="stats.quarantined">Quarantined</span><span class="stat-icon red">⛨</span></div>
+            <div class="stat-value" id="stat-quarantine">0</div><div class="stat-caption" data-i18n="stats.highRisk">High-risk emails</div>
           </article>
         </section>
 
@@ -120,12 +146,15 @@
               <h2 id="list-heading">All emails</h2>
               <p class="panel-subtitle" id="list-description">A complete view of scanned messages</p>
             </div>
-            <button class="icon-button" id="refresh-button" type="button" aria-label="Refresh emails" title="Refresh">↻</button>
+            <div class="panel-actions">
+              <button class="clear-emails-button" id="clear-emails-button" type="button" data-i18n="emails.clearButton">Clear saved emails</button>
+              <button class="icon-button" id="refresh-button" type="button" aria-label="Refresh emails" title="Refresh" data-i18n-aria-label="refresh" data-i18n-title="refresh">↻</button>
+            </div>
           </div>
           <div id="notice" class="notice" role="status" hidden></div>
           <div class="email-list" id="email-list" aria-live="polite"></div>
         </section>
-        <p class="disclaimer">Risk scores are based on simple rules and should be used as a screening aid, not a guarantee.</p>
+        <p class="disclaimer" data-i18n="disclaimer">Risk scores are based on simple rules and should be used as a screening aid, not a guarantee.</p>
       </section>
     </main>
   </div>
@@ -134,22 +163,22 @@
     <form id="email-form">
       <div class="dialog-heading">
         <div>
-          <div class="eyebrow">NEW SCAN</div>
-          <h2>Scan an email</h2>
-          <p>Paste the message details to check it for suspicious signals.</p>
+          <div class="eyebrow" data-i18n="form.newScan">NEW SCAN</div>
+          <h2 data-i18n="scanEmail">Scan an email</h2>
+          <p data-i18n="form.description">Paste the message details to check it for suspicious signals.</p>
         </div>
-        <button class="dialog-close" id="close-dialog" type="button" aria-label="Close">×</button>
+        <button class="dialog-close" id="close-dialog" type="button" aria-label="Close" data-i18n-aria-label="close">×</button>
       </div>
-      <label for="sender">Sender address</label>
-      <input id="sender" name="sender" type="text" placeholder="name@example.com" required>
-      <label for="subject">Subject</label>
-      <input id="subject" name="subject" type="text" placeholder="Email subject" required>
-      <label for="body">Email body</label>
-      <textarea id="body" name="body" rows="6" placeholder="Paste the email text here..." required></textarea>
+      <label for="sender" data-i18n="form.sender">Sender address</label>
+      <input id="sender" name="sender" type="text" placeholder="name@example.com" data-i18n-placeholder="form.senderPlaceholder" required>
+      <label for="subject" data-i18n="form.subject">Subject</label>
+      <input id="subject" name="subject" type="text" placeholder="Email subject" data-i18n-placeholder="form.subjectPlaceholder" required>
+      <label for="body" data-i18n="form.body">Email body</label>
+      <textarea id="body" name="body" rows="6" placeholder="Paste the email text here..." data-i18n-placeholder="form.bodyPlaceholder" required></textarea>
       <div class="form-error" id="form-error" role="alert" hidden></div>
       <div class="dialog-actions">
-        <button class="secondary-button" id="cancel-dialog" type="button">Cancel</button>
-        <button class="primary-button" id="submit-button" type="submit">Scan email <span>→</span></button>
+        <button class="secondary-button" id="cancel-dialog" type="button" data-i18n="cancel">Cancel</button>
+        <button class="primary-button" id="submit-button" type="submit"><span data-i18n="scanEmail">Scan an email</span> <span>→</span></button>
       </div>
     </form>
   </dialog>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>PhishGuard | Choose your language</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='language.js') }}" defer></script>
+</head>
+<body>
+  <main class="language-gate">
+    <form class="language-gate-card" id="language-gate-form">
+      <a class="brand" href="/" aria-label="PhishGuard home" data-i18n-aria-label="brand.home">
+        <span class="brand-mark" aria-hidden="true">✓</span>
+        <span>phish<span class="brand-light">guard</span></span>
+      </a>
+      <div class="eyebrow" data-i18n="language.welcome">WELCOME</div>
+      <h1 data-i18n="language.chooseTitle">Choose your language</h1>
+      <p data-i18n="language.chooseDescription">Select the language you want to use on the website. You can change it later.</p>
+      <label for="primary-language" data-i18n="language.label">Language</label>
+      <select id="primary-language" name="primary_language" required>
+        {% for language in languages %}
+        <option value="{{ language.code }}" {% if language.code == language_preferences.primary_language %}selected{% endif %}>{{ language.name }}</option>
+        {% endfor %}
+      </select>
+      <div id="language-settings-status" class="language-settings-status" role="alert" aria-live="polite"></div>
+      <button class="primary-button" type="submit" data-i18n="language.continue">Continue</button>
+    </form>
+  </main>
+</body>
+</html>

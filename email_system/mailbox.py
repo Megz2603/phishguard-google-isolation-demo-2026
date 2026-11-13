@@ -8,6 +8,7 @@ import os
 import secrets
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.header import decode_header, make_header
 from email.utils import parseaddr
@@ -16,7 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from database import get_connection
+from database import get_connection, get_language_preferences
 from email_system.encryption import (
     EncryptionError,
     decrypt_secret,
@@ -28,7 +29,7 @@ from email_system.oauth_config import (
     OAuthConfigError,
     load_oauth_credentials,
 )
-from models import save_email
+from models import delete_all_emails, save_emails
 from scanner.scanner import scan_email
 
 
@@ -331,6 +332,36 @@ def _message_body(payload):
     return " ".join(parser.text)
 
 
+def _gmail_message(access_token, item):
+    message = _google_json(
+        f"{GOOGLE_API}/users/me/messages/{item['id']}?format=full",
+        access_token,
+    )
+    headers = {
+        header["name"].lower(): header["value"]
+        for header in message.get("payload", {}).get("headers", [])
+    }
+    from_header = _decode_header(headers.get("from", ""))
+    sender = parseaddr(from_header)[1] or from_header or "Unknown sender"
+    received_at = None
+    try:
+        received_at = datetime.fromtimestamp(
+            int(message["internalDate"]) / 1000,
+            timezone.utc,
+        ).strftime("%Y-%m-%d %H:%M:%S")
+    except (KeyError, TypeError, ValueError, OverflowError):
+        pass
+
+    return {
+        "external_id": message["id"],
+        "sender": sender,
+        "subject": _decode_header(headers.get("subject", "")) or "(No subject)",
+        "body": _message_body(message.get("payload", {}))
+        or message.get("snippet", ""),
+        "received_at": received_at,
+    }
+
+
 def _gmail_messages(access_token):
     next_page = None
     while True:
@@ -342,34 +373,12 @@ def _gmail_messages(access_token):
             access_token,
         )
 
-        for item in page.get("messages", []):
-            message = _google_json(
-                f"{GOOGLE_API}/users/me/messages/{item['id']}?format=full",
-                access_token,
+        items = page.get("messages", [])
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            yield from executor.map(
+                lambda item: _gmail_message(access_token, item),
+                items,
             )
-            headers = {
-                header["name"].lower(): header["value"]
-                for header in message.get("payload", {}).get("headers", [])
-            }
-            from_header = _decode_header(headers.get("from", ""))
-            sender = parseaddr(from_header)[1] or from_header or "Unknown sender"
-            received_at = None
-            try:
-                received_at = datetime.fromtimestamp(
-                    int(message["internalDate"]) / 1000,
-                    timezone.utc,
-                ).strftime("%Y-%m-%d %H:%M:%S")
-            except (KeyError, TypeError, ValueError, OverflowError):
-                pass
-
-            yield {
-                "external_id": message["id"],
-                "sender": sender,
-                "subject": _decode_header(headers.get("subject", "")) or "(No subject)",
-                "body": _message_body(message.get("payload", {}))
-                or message.get("snippet", ""),
-                "received_at": received_at,
-            }
 
         next_page = page.get("nextPageToken")
         if not next_page:
@@ -403,26 +412,48 @@ def sync_status(provider):
     return dict(row) if row else {"status": "idle", "processed": 0, "error": None}
 
 
+def clear_saved_emails():
+    if not _sync_lock.acquire(blocking=False):
+        raise MailboxError("Cannot clear saved emails while Gmail sync is running.")
+    try:
+        return delete_all_emails()
+    finally:
+        _sync_lock.release()
+
+
 def _run_sync():
     processed = 0
+    batch = []
     try:
         access_token = _access_token()
+        preferences = get_language_preferences()
         for message in _gmail_messages(access_token):
-            result = scan_email(message["sender"], message["subject"], message["body"])
-            save_email(
-                sender=message["sender"],
-                subject=message["subject"],
-                body=message["body"],
-                risk_score=result["risk_score"],
-                status=result["status"],
-                reasons="; ".join(result["reasons"]),
-                provider=PROVIDER,
-                external_id=message["external_id"],
-                created_at=message["received_at"],
+            result = scan_email(
+                message["sender"],
+                message["subject"],
+                message["body"],
+                primary_language=preferences["primary_language"],
+                secondary_languages=preferences["secondary_languages"],
             )
-            processed += 1
-            if processed % 25 == 0:
+            batch.append({
+                "sender": message["sender"],
+                "subject": message["subject"],
+                "body": message["body"],
+                "risk_score": result["risk_score"],
+                "status": result["status"],
+                "reasons": "; ".join(result["reasons"]),
+                "provider": PROVIDER,
+                "external_id": message["external_id"],
+                "created_at": message["received_at"],
+            })
+            if len(batch) == 100:
+                save_emails(batch)
+                processed += len(batch)
+                batch.clear()
                 _set_sync("running", processed)
+        if batch:
+            save_emails(batch)
+            processed += len(batch)
         _set_sync("complete", processed)
     except Exception as error:
         logging.getLogger(__name__).exception("Gmail sync failed")

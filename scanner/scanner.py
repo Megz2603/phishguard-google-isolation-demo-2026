@@ -1,8 +1,20 @@
 from scanner.scoring import calculate_score
 
 
-def scan_email(sender, subject, body):
-    risk_score, reasons = calculate_score(sender, subject, body)
+def scan_email(
+    sender,
+    subject,
+    body,
+    primary_language="en",
+    secondary_languages=None,
+):
+    risk_score, reasons = calculate_score(
+        sender,
+        subject,
+        body,
+        primary_language=primary_language,
+        secondary_languages=secondary_languages,
+    )
 
     # Keep the folder thresholds aligned with the dashboard and README.
     if risk_score >= 70:

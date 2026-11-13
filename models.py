@@ -51,6 +51,38 @@ def save_email(
     return email_id
 
 
+def save_emails(emails):
+    """Encrypt and insert a mailbox batch in one SQLite transaction."""
+    encrypted_rows = []
+    for email in emails:
+        content = tuple(encrypt_field(email[field]) for field in (
+            "sender", "subject", "body", "reasons"
+        ))
+        encrypted_rows.append((
+            content[0],
+            content[1],
+            content[2],
+            email["risk_score"],
+            email["status"],
+            content[3],
+            email["provider"],
+            email["external_id"],
+            email.get("created_at"),
+        ))
+
+    connection = get_connection()
+    try:
+        connection.executemany("""
+            INSERT OR IGNORE INTO emails
+            (sender, subject, body, risk_score, status, reasons,
+             provider, external_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+        """, encrypted_rows)
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def _get_emails(query, parameters=()):
     connection = get_connection()
     rows = connection.execute(query, parameters).fetchall()
@@ -89,6 +121,18 @@ def update_email_status(email_id, status):
 
 def delete_email(email_id):
     connection = get_connection()
-    connection.execute("DELETE FROM emails WHERE id = ?", (email_id,))
-    connection.commit()
-    connection.close()
+    try:
+        connection.execute("DELETE FROM emails WHERE id = ?", (email_id,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def delete_all_emails():
+    connection = get_connection()
+    try:
+        cursor = connection.execute("DELETE FROM emails")
+        connection.commit()
+        return cursor.rowcount
+    finally:
+        connection.close()
