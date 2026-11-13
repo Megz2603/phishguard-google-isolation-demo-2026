@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import importlib
+import io
 import os
 import sqlite3
 import tempfile
@@ -65,6 +66,25 @@ class AuthenticationIsolationTests(unittest.TestCase):
             browser_session["csrf_token"] = f"csrf-{user_id}"
         return {"X-CSRF-Token": f"csrf-{user_id}"}
 
+    def start_guest_session(self, client=None):
+        client = client or self.client
+        response = client.get("/login")
+        self.assertIn(
+            b"Continue without signing in",
+            response.get_data(),
+        )
+        with client.session_transaction() as browser_session:
+            csrf_token = browser_session["csrf_token"]
+        response = client.post(
+            "/auth/guest",
+            data={"csrf_token": csrf_token},
+        )
+        self.assertEqual(response.status_code, 302)
+        with client.session_transaction() as browser_session:
+            guest_id = browser_session["guest_id"]
+            csrf_token = browser_session["csrf_token"]
+        return guest_id, {"X-CSRF-Token": csrf_token}
+
     def test_private_routes_reject_unauthenticated_requests(self):
         requests = (
             ("get", "/emails"),
@@ -74,6 +94,7 @@ class AuthenticationIsolationTests(unittest.TestCase):
             ("get", "/mail/sync/google/status"),
             ("get", "/api/language-settings"),
             ("post", "/emails"),
+            ("post", "/emails/image"),
             ("post", "/mail/sync/google"),
             ("put", "/emails/1/move"),
             ("delete", "/emails/1"),
@@ -84,6 +105,77 @@ class AuthenticationIsolationTests(unittest.TestCase):
                 response = getattr(self.client, method)(path)
                 self.assertEqual(response.status_code, 401)
         self.assertEqual(self.client.get("/").status_code, 302)
+
+    def test_guest_can_scan_manually_without_access_to_other_guest_or_gmail_data(self):
+        guest_a_id, guest_a_headers = self.start_guest_session()
+        self.assertEqual(self.client.get("/api/language-settings").status_code, 200)
+        language_response = self.client.put(
+            "/api/language-settings",
+            json={"primary_language": "en", "secondary_languages": []},
+            headers=guest_a_headers,
+        )
+        self.assertEqual(language_response.status_code, 200)
+        scanner_page = self.client.get("/scanner")
+        self.assertEqual(scanner_page.status_code, 200)
+        self.assertIn(b'data-guest-mode="true"', scanner_page.get_data())
+
+        response = self.client.post(
+            "/emails",
+            json={
+                "sender": "alerts@example.com",
+                "subject": "Verify your account",
+                "body": "Please review this account message immediately.",
+            },
+            headers=guest_a_headers,
+        )
+        self.assertEqual(response.status_code, 201)
+        email_id = response.get_json()["id"]
+        self.assertEqual(
+            [email["id"] for email in self.client.get("/emails").get_json()],
+            [email_id],
+        )
+        self.assertEqual(self.client.get("/mail/accounts").status_code, 401)
+
+        guest_b_client = self.app_module.app.test_client()
+        guest_b_id, guest_b_headers = self.start_guest_session(guest_b_client)
+        self.assertNotEqual(guest_a_id, guest_b_id)
+        self.assertEqual(guest_b_client.get("/emails").get_json(), [])
+        self.assertEqual(guest_b_client.get(f"/emails/{email_id}").status_code, 404)
+        self.assertEqual(
+            guest_b_client.put(
+                f"/emails/{email_id}/move",
+                json={"status": "quarantine"},
+                headers=guest_b_headers,
+            ).status_code,
+            404,
+        )
+        self.assertEqual(
+            guest_b_client.delete(
+                f"/emails/{email_id}",
+                headers=guest_b_headers,
+            ).status_code,
+            404,
+        )
+
+        connection = database.get_connection()
+        try:
+            row = connection.execute(
+                "SELECT user_id FROM emails WHERE id = ?", (email_id,)
+            ).fetchone()
+            self.assertEqual(row["user_id"], guest_a_id)
+        finally:
+            connection.close()
+
+    def test_guest_write_routes_still_require_csrf(self):
+        self.start_guest_session()
+
+        response = self.client.post(
+            "/emails",
+            json={"sender": "a@example.com", "subject": "Test", "body": "Test body"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.client.get("/emails").get_json(), [])
 
     def test_user_cannot_read_update_or_delete_another_users_email(self):
         with (
@@ -124,6 +216,68 @@ class AuthenticationIsolationTests(unittest.TestCase):
             self.assertEqual((row["user_id"], row["status"]), ("user-b", "inbox"))
         finally:
             connection.close()
+
+    def test_image_upload_uses_the_authenticated_users_existing_scan_path(self):
+        headers = self.sign_in_as("image-user")
+        extracted = {
+            "sender": "alerts@example.com",
+            "subject": "Screenshot subject",
+            "body": "OCR text from an email screenshot",
+        }
+        scan_result = {
+            "id": 12,
+            "sender": extracted["sender"],
+            "subject": extracted["subject"],
+            "risk_score": 72,
+            "status": "quarantine",
+            "reasons": ["Email contains a link."],
+        }
+        with (
+            patch.object(
+                self.app_module,
+                "extract_email_from_image",
+                return_value=extracted,
+            ),
+            patch.object(
+                self.app_module,
+                "receive_email",
+                return_value=scan_result,
+            ) as receive_email,
+        ):
+            response = self.client.post(
+                "/emails/image",
+                data={"image": (io.BytesIO(b"image bytes"), "email.png")},
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), scan_result)
+        receive_email.assert_called_once_with(
+            "image-user",
+            extracted["sender"],
+            extracted["subject"],
+            extracted["body"],
+        )
+
+    def test_image_upload_rejects_missing_file(self):
+        headers = self.sign_in_as("image-user")
+
+        response = self.client.post("/emails/image", data={}, headers=headers)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Choose an image", response.get_json()["error"])
+
+    def test_image_upload_rejects_file_over_size_limit(self):
+        headers = self.sign_in_as("image-user")
+        with patch.object(self.app_module, "MAX_IMAGE_BYTES", 5):
+            response = self.client.post(
+                "/emails/image",
+                data={"image": (io.BytesIO(b"123456"), "email.png")},
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("8 MB or smaller", response.get_json()["error"])
 
     def test_mail_accounts_sync_state_and_language_settings_are_user_scoped(self):
         connection = database.get_connection()

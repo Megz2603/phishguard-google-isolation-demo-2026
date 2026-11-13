@@ -10,7 +10,7 @@
   <script src="{{ url_for('static', filename='language.js') }}" defer></script>
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
-<body>
+<body data-guest-mode="{{ 'true' if is_guest else 'false' }}">
   <div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="/" aria-label="PhishGuard home" data-i18n-aria-label="brand.home">
@@ -20,19 +20,20 @@
         <span>phish<span class="brand-light">guard</span></span>
       </a>
 
-      <div class="nav-caption" data-i18n="workspace">WORKSPACE</div>
-      <nav class="mail-nav" aria-label="Email folders" data-i18n-aria-label="nav.folders">
-        <button class="nav-item active" data-status="all">
-          <span class="nav-icon">◫</span><span data-i18n="all">All emails</span><span class="nav-count" id="count-all">0</span>
+      <div class="nav-caption" data-i18n="nav.emailWorkspace">EMAILS</div>
+      <nav class="mail-nav" aria-label="Email workspace" data-i18n-aria-label="nav.emailWorkspace">
+        <button class="nav-item active" type="button" data-workspace="emails" aria-pressed="true">
+          <span class="nav-icon">◫</span><span data-i18n="all">All emails</span>
         </button>
-        <button class="nav-item" data-status="inbox">
-          <span class="nav-icon">⌑</span><span data-i18n="inbox">Inbox</span><span class="nav-count" id="count-inbox">0</span>
+      </nav>
+
+      <div class="nav-caption safety-nav-caption" data-i18n="nav.internetSafety">INTERNET SAFETY</div>
+      <nav class="mail-nav" aria-label="Internet safety lessons" data-i18n-aria-label="nav.internetSafety">
+        <button class="nav-item" type="button" data-safety-topic="safe-online" aria-pressed="false">
+          <span class="nav-icon">✦</span><span data-i18n="safety.online.nav">How to stay safe online</span>
         </button>
-        <button class="nav-item" data-status="review">
-          <span class="nav-icon">◷</span><span data-i18n="review">Needs review</span><span class="nav-count" id="count-review">0</span>
-        </button>
-        <button class="nav-item" data-status="quarantine">
-          <span class="nav-icon">⛨</span><span data-i18n="quarantine">Quarantine</span><span class="nav-count" id="count-quarantine">0</span>
+        <button class="nav-item" type="button" data-safety-topic="spot-phishing" aria-pressed="false">
+          <span class="nav-icon">⌕</span><span data-i18n="safety.phishing.nav">Spot a phishing email</span>
         </button>
       </nav>
 
@@ -65,15 +66,20 @@
         <span class="online-dot"></span> <span data-i18n="system.operational">System operational</span>
     </span>
     <span class="avatar" aria-label="User" data-i18n-aria-label="user">PG</span>
+    {% if is_guest %}
+    <span class="connection-email">Guest session</span>
+    {% else %}
     <span class="connection-email">{{ user_email }}</span>
     <form action="{{ url_for('logout') }}" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="secondary-button" type="submit">Sign out</button>
     </form>
+    {% endif %}
 </div>
       </header>
 
       <section class="page-content">
+        <div id="scanner-dashboard">
         <section class="language-settings" aria-labelledby="language-settings-title">
           <div class="language-settings-copy">
             <h2 id="language-settings-title" data-i18n="language.settings">Language settings</h2>
@@ -106,7 +112,11 @@
           <div class="connections-heading">
             <div>
               <h2 data-i18n="mail.connect">Connect your email</h2>
+              {% if is_guest %}
+              <p>Sign in with Google to connect Gmail. Guest sessions expire after 8 hours; scans stay in the app database until deleted and are not transferred to a Google account.</p>
+              {% else %}
               <p data-i18n="mail.connectDescription">Connect Gmail with read-only Google access. Messages are saved and scanned locally.</p>
+              {% endif %}
             </div>
             <span class="privacy-label"><span>⌑</span> <span data-i18n="mail.readOnly">READ ONLY</span></span>
           </div>
@@ -127,22 +137,22 @@
         </section>
 
         <section class="stats-grid" aria-label="Email summary" data-i18n-aria-label="stats.summary">
-          <article class="stat-card">
-            <div class="stat-top"><span data-i18n="stats.total">Total scanned</span><span class="stat-icon blue">▤</span></div>
-            <div class="stat-value" id="stat-total">0</div><div class="stat-caption" data-i18n="stats.totalCaption">Emails in your workspace</div>
-          </article>
-          <article class="stat-card">
-            <div class="stat-top"><span data-i18n="inbox">Inbox</span><span class="stat-icon green">✓</span></div>
-            <div class="stat-value" id="stat-inbox">0</div><div class="stat-caption" data-i18n="stats.lowRisk">Low-risk emails</div>
-          </article>
-          <article class="stat-card">
-            <div class="stat-top"><span data-i18n="review">Needs review</span><span class="stat-icon amber">◷</span></div>
-            <div class="stat-value" id="stat-review">0</div><div class="stat-caption" data-i18n="stats.reviewCaption">Worth a closer look</div>
-          </article>
-          <article class="stat-card">
-            <div class="stat-top"><span data-i18n="stats.quarantined">Quarantined</span><span class="stat-icon red">⛨</span></div>
-            <div class="stat-value" id="stat-quarantine">0</div><div class="stat-caption" data-i18n="stats.highRisk">High-risk emails</div>
-          </article>
+          <button class="stat-card stat-filter" id="stat-filter-all" type="button" data-status="all" aria-pressed="true">
+            <span class="stat-top"><span data-i18n="stats.total">Total scanned</span><span class="stat-icon blue">▤</span></span>
+            <span class="stat-value" id="stat-total">0</span><span class="stat-caption" data-i18n="stats.totalCaption">Emails in your workspace</span>
+          </button>
+          <button class="stat-card stat-filter" id="stat-filter-inbox" type="button" data-status="inbox" aria-pressed="false">
+            <span class="stat-top"><span data-i18n="inbox">Inbox</span><span class="stat-icon green">✓</span></span>
+            <span class="stat-value" id="stat-inbox">0</span><span class="stat-caption" data-i18n="stats.lowRisk">Low-risk emails</span>
+          </button>
+          <button class="stat-card stat-filter" id="stat-filter-review" type="button" data-status="review" aria-pressed="false">
+            <span class="stat-top"><span data-i18n="review">Needs review</span><span class="stat-icon amber">◷</span></span>
+            <span class="stat-value" id="stat-review">0</span><span class="stat-caption" data-i18n="stats.reviewCaption">Worth a closer look</span>
+          </button>
+          <button class="stat-card stat-filter" id="stat-filter-quarantine" type="button" data-status="quarantine" aria-pressed="false">
+            <span class="stat-top"><span data-i18n="stats.quarantined">Quarantined</span><span class="stat-icon red">⛨</span></span>
+            <span class="stat-value" id="stat-quarantine">0</span><span class="stat-caption" data-i18n="stats.highRisk">High-risk emails</span>
+          </button>
         </section>
 
         <section class="email-panel">
@@ -163,6 +173,37 @@
           </div>
         </section>
         <p class="disclaimer" data-i18n="disclaimer">Risk scores are based on simple rules and should be used as a screening aid, not a guarantee.</p>
+        </div>
+
+        <section id="safety-content" class="safety-content" hidden>
+          <article class="safety-panel" data-safety-panel="safe-online" hidden>
+            <div class="eyebrow" data-i18n="safety.eyebrow">INTERNET SAFETY</div>
+            <h1 data-i18n="safety.online.title">How to stay safe on the internet</h1>
+            <p class="subtitle" data-i18n="safety.online.description">A few practical habits can protect your accounts, devices, and personal information.</p>
+            <div class="safety-tip-grid">
+              <article class="safety-tip"><span class="safety-tip-number">01</span><h2 data-i18n="safety.passwords.title">Protect your accounts</h2><p data-i18n="safety.passwords.text">Use a different, strong password for each account and turn on multi-factor authentication. Never share sign-in codes.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">02</span><h2 data-i18n="safety.links.title">Check before you click</h2><p data-i18n="safety.links.text">Use a known bookmark or type the website address yourself when a message asks you to sign in. HTTPS encrypts a connection but does not prove a site is trustworthy.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">03</span><h2 data-i18n="safety.updates.title">Keep devices updated</h2><p data-i18n="safety.updates.text">Install updates for your phone, computer, browser, and apps. Updates often fix security weaknesses.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">04</span><h2 data-i18n="safety.privacy.title">Share less personal information</h2><p data-i18n="safety.privacy.text">Be cautious with unexpected requests for payment details, passwords, identity documents, or personal information.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">05</span><h2 data-i18n="safety.downloads.title">Be careful with downloads</h2><p data-i18n="safety.downloads.text">Only open attachments and install software you were expecting, from a source you can verify.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">06</span><h2 data-i18n="safety.public.title">Use public Wi-Fi thoughtfully</h2><p data-i18n="safety.public.text">Avoid sensitive transactions on networks you do not trust, and use your mobile connection when unsure.</p></article>
+            </div>
+          </article>
+
+          <article class="safety-panel" data-safety-panel="spot-phishing" hidden>
+            <div class="eyebrow" data-i18n="safety.eyebrow">INTERNET SAFETY</div>
+            <h1 data-i18n="safety.phishing.title">How to spot a phishing email</h1>
+            <p class="subtitle" data-i18n="safety.phishing.description">Pause and verify before replying, clicking a link, or opening an attachment.</p>
+            <div class="safety-tip-grid">
+              <article class="safety-tip"><span class="safety-tip-number">01</span><h2 data-i18n="safety.urgency.title">Notice pressure and urgency</h2><p data-i18n="safety.urgency.text">Threats, deadlines, prizes, and “act now” demands are common ways to make you skip careful checks.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">02</span><h2 data-i18n="safety.sender.title">Check who sent it</h2><p data-i18n="safety.sender.text">Read the full sender address. A familiar display name can hide an unrelated or misspelled email address.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">03</span><h2 data-i18n="safety.destination.title">Verify links without opening them</h2><p data-i18n="safety.destination.text">On a computer, hover to inspect the destination; on a phone, press and hold carefully. If the address looks unfamiliar, do not open it.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">04</span><h2 data-i18n="safety.secrets.title">Never send passwords or codes</h2><p data-i18n="safety.secrets.text">Do not reply with passwords, payment information, or one-time verification codes. Go to the official website or app instead.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">05</span><h2 data-i18n="safety.attachments.title">Treat unexpected attachments carefully</h2><p data-i18n="safety.attachments.text">Do not open an attachment you were not expecting, even if the message appears to come from someone you know.</p></article>
+              <article class="safety-tip"><span class="safety-tip-number">06</span><h2 data-i18n="safety.verify.title">Verify through another channel</h2><p data-i18n="safety.verify.text">Contact the person or organization using a phone number or website you already trust, not the details in the suspicious message.</p></article>
+            </div>
+          </article>
+        </section>
       </section>
     </main>
   </div>
@@ -189,6 +230,16 @@
         <button class="primary-button" id="submit-button" type="submit"><span data-i18n="scanEmail">Scan an email</span> <span>→</span></button>
       </div>
     </form>
+    <section class="image-scan-option" aria-labelledby="image-scan-title">
+      <h3 id="image-scan-title">Scan an email screenshot</h3>
+      <p>Upload a PNG, JPEG, or WebP screenshot. The screenshot is discarded after OCR; extracted text is saved to your private mailbox.</p>
+      <label for="email-image">Email screenshot</label>
+      <input id="email-image" name="image" type="file" accept="image/png,image/jpeg,image/webp">
+      <div class="form-error" id="image-error" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button class="primary-button" id="image-scan-button" type="button">Scan screenshot</button>
+      </div>
+    </section>
   </dialog>
 
 </body>

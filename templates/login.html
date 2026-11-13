@@ -13,9 +13,14 @@
       <a class="brand" href="/">PhishGuard</a>
       <div class="eyebrow">SECURE WORKSPACE</div>
       <h1>Sign in to PhishGuard</h1>
-      <p>Your saved messages and settings are private to your Google account.</p>
+      <p>Sign in with Google for a private workspace and Gmail connection, or continue as a guest to scan messages manually.</p>
       {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
       <a class="primary-button" href="{{ url_for('connect_gmail') }}">Sign in with Google</a>
+      <form action="{{ url_for('continue_as_guest') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="secondary-button" type="submit">Continue without signing in</button>
+      </form>
+      <p class="guest-note">Guest sessions expire after 8 hours. Scans stay in the app database until deleted and are not transferred to a Google account.</p>
     </section>
   </main>
 </body>

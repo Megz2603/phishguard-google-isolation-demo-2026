@@ -6,8 +6,12 @@ const composeDialog = document.querySelector("#compose-dialog");
 const emailForm = document.querySelector("#email-form");
 const formError = document.querySelector("#form-error");
 const submitButton = document.querySelector("#submit-button");
+const imageInput = document.querySelector("#email-image");
+const imageError = document.querySelector("#image-error");
+const imageScanButton = document.querySelector("#image-scan-button");
 
 let activeStatus = "all";
+let activeView = "emails";
 let allEmails = [];
 let syncPollers = {};
 let gmailAccount = null;
@@ -107,12 +111,12 @@ function setCounts(emails) {
   };
 
   for (const [status, count] of Object.entries(counts)) {
-    document.querySelector(`#count-${status}`).textContent = count;
     if (status !== "all") {
       document.querySelector(`#stat-${status}`).textContent = count;
     }
   }
   document.querySelector("#stat-total").textContent = emails.length;
+  updateFilterButtons();
 }
 
 function formatDate(value) {
@@ -259,7 +263,8 @@ function renderEmails(emails) {
     : emails.filter((email) => email.status === activeStatus);
   list.replaceChildren();
 
-  document.querySelector("#page-title").textContent = statusLabels[activeStatus];
+  updatePageTitle();
+  updateFilterButtons();
   document.querySelector("#list-heading").textContent = statusLabels[activeStatus];
   document.querySelector("#list-description").textContent = activeStatus === "all"
     ? window.translate("list.allDescription")
@@ -287,9 +292,64 @@ function renderEmails(emails) {
   for (const email of visibleEmails) list.append(makeEmailRow(email));
 }
 
+function updatePageTitle() {
+  const titleKey = {
+    "safe-online": "safety.online.title",
+    "spot-phishing": "safety.phishing.title"
+  }[activeView];
+  document.querySelector("#page-title").textContent = titleKey
+    ? window.translate(titleKey)
+    : statusLabels[activeStatus];
+}
+
+function updateNavigation() {
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    const selected = button.dataset.workspace === activeView
+      || button.dataset.safetyTopic === activeView;
+    button.classList.toggle("active", selected);
+    if (button.hasAttribute("aria-pressed")) {
+      button.setAttribute("aria-pressed", String(selected));
+    }
+  });
+}
+
+function updateFilterButtons() {
+  document.querySelectorAll(".stat-filter").forEach((button) => {
+    button.setAttribute(
+      "aria-pressed",
+      String(activeView === "emails" && button.dataset.status === activeStatus)
+    );
+  });
+}
+
+function selectEmailStatus(status) {
+  activeView = "emails";
+  activeStatus = status;
+  document.querySelector("#scanner-dashboard").hidden = false;
+  document.querySelector("#safety-content").hidden = true;
+  updateNavigation();
+  updateFilterButtons();
+  renderEmails(allEmails);
+  setNotice("");
+}
+
+function selectSafetyTopic(topic) {
+  activeView = topic;
+  document.querySelector("#scanner-dashboard").hidden = true;
+  document.querySelector("#safety-content").hidden = false;
+  document.querySelectorAll("[data-safety-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.safetyPanel !== topic;
+  });
+  updateNavigation();
+  updateFilterButtons();
+  updatePageTitle();
+  setNotice("");
+}
+
 document.addEventListener("languagechange", () => {
   updateStatusLabels();
   renderEmails(allEmails);
+  updatePageTitle();
   if (document.querySelector("#account-google")) {
     setGmailCard(gmailAccount, gmailSync);
   }
@@ -439,13 +499,19 @@ document.querySelectorAll(".disconnect-button").forEach((button) => {
   });
 });
 
-document.querySelectorAll(".nav-item").forEach((button) => {
+document.querySelector('[data-workspace="emails"]').addEventListener("click", () => {
+  selectEmailStatus("all");
+});
+
+document.querySelectorAll(".stat-filter").forEach((button) => {
   button.addEventListener("click", () => {
-    document.querySelector(".nav-item.active")?.classList.remove("active");
-    button.classList.add("active");
-    activeStatus = button.dataset.status;
-    renderEmails(allEmails);
-    setNotice("");
+    selectEmailStatus(button.dataset.status);
+  });
+});
+
+document.querySelectorAll("[data-safety-topic]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectSafetyTopic(button.dataset.safetyTopic);
   });
 });
 
@@ -465,11 +531,8 @@ document.querySelector("#clear-emails-button").addEventListener("click", async (
   try {
     const result = await apiRequest("/emails", { method: "DELETE" });
     allEmails = [];
-    activeStatus = "all";
-    document.querySelector(".nav-item.active")?.classList.remove("active");
-    document.querySelector('[data-status="all"]')?.classList.add("active");
+    selectEmailStatus("all");
     setCounts(allEmails);
-    renderEmails(allEmails);
     setNotice(window.translate("emails.clearSuccess", {
       count: result.deleted_count
     }));
@@ -501,9 +564,7 @@ emailForm.addEventListener("submit", async (event) => {
     });
     emailForm.reset();
     composeDialog.close();
-    activeStatus = "all";
-    document.querySelector(".nav-item.active")?.classList.remove("active");
-    document.querySelector('[data-status="all"]').classList.add("active");
+    selectEmailStatus("all");
     await loadEmails();
     setNotice(window.translate("email.scanComplete", {
       score: result.risk_score,
@@ -518,8 +579,45 @@ emailForm.addEventListener("submit", async (event) => {
   }
 });
 
+imageScanButton.addEventListener("click", async () => {
+  imageError.hidden = true;
+  const image = imageInput.files[0];
+  if (!image) {
+    imageError.textContent = "Choose an image file to scan.";
+    imageError.hidden = false;
+    return;
+  }
+
+  imageScanButton.disabled = true;
+  imageScanButton.textContent = "Reading screenshot...";
+  const formData = new FormData();
+  formData.append("image", image);
+  try {
+    const result = await apiRequest("/emails/image", {
+      method: "POST",
+      body: formData
+    });
+    imageInput.value = "";
+    composeDialog.close();
+    selectEmailStatus("all");
+    await loadEmails();
+    setNotice(window.translate("email.scanComplete", {
+      score: result.risk_score,
+      status: statusLabels[result.status]
+    }));
+  } catch (error) {
+    imageError.textContent = error.message;
+    imageError.hidden = false;
+  } finally {
+    imageScanButton.disabled = false;
+    imageScanButton.textContent = "Scan screenshot";
+  }
+});
+
 loadEmails();
-loadMailboxAccounts();
+if (document.body.dataset.guestMode !== "true") {
+  loadMailboxAccounts();
+}
 const query = new URLSearchParams(window.location.search);
 if (query.has("connected")) {
   setNotice(window.translate("notice.connected"));

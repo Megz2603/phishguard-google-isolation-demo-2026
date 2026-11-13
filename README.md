@@ -18,6 +18,20 @@ Open the project folder in VS Code and run:
 python -m pip install -r requirements.txt
 ```
 
+Screenshot scanning also requires the Tesseract OCR executable. Install
+Tesseract for your operating system and make sure `tesseract` is available on
+`PATH`. The Render Docker image installs it automatically.
+
+The scanner accepts PNG, JPEG, and WebP screenshots up to 8 MB. OCR runs on the
+app server without sending the image to a third-party OCR service. The screenshot
+is discarded after reading; the extracted text uses the same phishing scanner
+and per-user settings as manually entered and Gmail messages. Screenshot
+validation accepts readable, cohesive message text even when OCR misses headers.
+The OCR crop retains the email subject and sender area while excluding some
+surrounding mail-client chrome, and repairs spaces inside recognized URLs.
+Review the extracted text saved with the scan. OCR currently uses Tesseract's
+English language model.
+
 ## App sign-in and configuration
 
 The app requires a random Flask session secret. In PowerShell, generate one for
@@ -52,6 +66,15 @@ before creating the app session. OAuth state is bound to the browser session,
 the PKCE verifier is stored encrypted in SQLite for cross-worker callbacks, and
 API writes require a CSRF token. Gmail access remains read-only. Do not expose
 the local development server directly to the internet.
+
+Users can choose **Continue without signing in** to manually paste or upload
+email screenshots. A guest receives an unpredictable workspace isolated from
+all other guests; manual scans and language preferences are scoped to that
+workspace. The guest session expires after eight hours. Scans remain in the
+application database until deleted, even after the guest session expires, so
+guests should delete scans before leaving if they want them removed. Gmail
+connection, sync, and Google-account data still require Google sign-in. Guest
+scans are not transferred to a Google account.
 
 ## Email privacy and encryption
 
@@ -155,12 +178,13 @@ live file-sync service.
 ### Free test hosting on Render
 
 Render offers free Python web services for hobby testing ([plan limits](https://render.com/docs/free)).
-Create a **Web Service** from this repository and use:
+Create a **Web Service** from this repository using the **Docker** runtime and
+the root `Dockerfile`. It installs Tesseract and starts Gunicorn. If you already
+created a Python-native service, change its runtime to Docker in the service
+source settings so screenshot OCR is available. Do not enter separate build or
+start commands; the Dockerfile provides them.
 
-- Build command: `pip install -r requirements.txt`
-- Start command: `gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4`
-
-In the service's environment settings, add `APP_ENV=production`,
+In the service's environment settings, keep/add `APP_ENV=production`,
 `APP_SECRET_KEY`, `APP_DATA_ENCRYPTION_KEY`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and
 `DATABASE_PATH=/tmp/phishguard-demo.db`. The separate database path avoids
@@ -197,8 +221,10 @@ Open the dashboard at:
 http://127.0.0.1:5000
 
 The dashboard lets you scan the signed-in user's Gmail in batches, submit emails
-manually, filter results by status, view detection reasons, move emails
-between Inbox, Review and Quarantine, or delete local copies. **Refresh**
+manually, view detection reasons, move emails between Inbox, Review and
+Quarantine, or delete local copies. Select the summary cards above the email
+list to filter by All emails, Inbox, Needs review, or Quarantined. The sidebar
+also includes lessons on staying safe online and spotting phishing. **Refresh**
 reloads the saved email list; use **Scan next** below the list to fetch the next
 Gmail batch.
 **Clear saved emails** removes the signed-in user's email records, but keeps

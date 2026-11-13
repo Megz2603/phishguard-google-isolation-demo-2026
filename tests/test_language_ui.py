@@ -100,6 +100,28 @@ class LanguageUiTests(unittest.TestCase):
         ))
         self.assertEqual(used - defined, set())
 
+    def test_scanner_has_safety_tabs_and_status_filter_buttons(self):
+        template = (ROOT / "templates" / "scanner.html").read_text(encoding="utf-8")
+        for topic in ("safe-online", "spot-phishing"):
+            with self.subTest(topic=topic):
+                self.assertIn(f'data-safety-topic="{topic}"', template)
+                self.assertIn(f'data-safety-panel="{topic}"', template)
+
+        for status in ("all", "inbox", "review", "quarantine"):
+            with self.subTest(status=status):
+                self.assertRegex(
+                    template,
+                    rf'<button[^>]*class="stat-card stat-filter"[^>]*data-status="{status}"',
+                )
+        self.assertNotRegex(template, r'<button[^>]*class="nav-item[^"]*"[^>]*data-status=')
+
+    def test_landing_page_promotes_screenshot_filter_and_safety_features(self):
+        template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        for card in ("card4", "card5", "card6"):
+            with self.subTest(card=card):
+                self.assertIn(f'data-i18n="landing.{card}Title"', template)
+                self.assertIn(f'data-i18n="landing.{card}Description"', template)
+
 
 if __name__ == "__main__":
     unittest.main()

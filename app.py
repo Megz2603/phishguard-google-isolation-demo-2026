@@ -14,8 +14,10 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from database import initialise_database, get_language_preferences, save_language_preferences
+from email_system.image_scanner import ImageScanError, extract_email_from_image
 from email_system.mailbox import (
     MailboxError,
     authorization_url,
@@ -38,6 +40,8 @@ from email_system.receiver import receive_email
 from scanner.languages import LANGUAGES
 
 
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
 app = Flask(__name__)
 app_secret = os.environ.get("APP_SECRET_KEY", "")
 if len(app_secret) < 32:
@@ -46,6 +50,7 @@ if len(app_secret) < 32:
     )
 app.config.update(
     SECRET_KEY=app_secret,
+    MAX_CONTENT_LENGTH=MAX_IMAGE_BYTES + 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("APP_ENV", "").lower() == "production",
@@ -73,10 +78,25 @@ def login_required(view):
     return wrapped
 
 
+def workspace_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not g.data_user_id:
+            if request.path.startswith(("/api/", "/emails")):
+                return jsonify({
+                    "error": "Sign in or continue as a guest to use manual scanning."
+                }), 401
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
 @app.before_request
 def load_user_and_check_csrf():
     g.user_id = session.get("user_id")
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and g.user_id:
+    g.guest_id = session.get("guest_id")
+    g.data_user_id = g.user_id or g.guest_id
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and g.data_user_id:
         expected = session.get("csrf_token", "")
         supplied = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token", "")
         if not expected or not hmac.compare_digest(
@@ -85,13 +105,24 @@ def load_user_and_check_csrf():
             return jsonify({"error": "The request could not be verified. Reload the page and try again."}), 400
 
 
+@app.errorhandler(RequestEntityTooLarge)
+def request_too_large(error):
+    message = (
+        "Image uploads must be 8 MB or smaller."
+        if request.path == "/emails/image"
+        else "The request body is too large."
+    )
+    return jsonify({"error": message}), 413
+
+
 def render_page(template):
     return render_template(
         template,
         languages=LANGUAGES,
-        language_preferences=get_language_preferences(g.user_id),
+        language_preferences=get_language_preferences(g.data_user_id),
         csrf_token=session.setdefault("csrf_token", secrets.token_urlsafe(32)),
         user_email=session.get("user_email", ""),
+        is_guest=bool(g.guest_id),
     )
 
 
@@ -99,7 +130,33 @@ def render_page(template):
 def login():
     if g.user_id:
         return redirect(url_for("home"))
-    return render_template("login.html", error=request.args.get("error", ""))
+    return render_template(
+        "login.html",
+        error=request.args.get("error", ""),
+        csrf_token=session.setdefault("csrf_token", secrets.token_urlsafe(32)),
+    )
+
+
+@app.route("/auth/guest", methods=["POST"])
+def continue_as_guest():
+    if g.user_id:
+        return redirect(url_for("home"))
+    expected = session.get("csrf_token", "")
+    supplied = request.form.get("csrf_token", "")
+    if not expected or not hmac.compare_digest(
+        expected.encode("utf-8"), supplied.encode("utf-8")
+    ):
+        return render_template(
+            "login.html",
+            error="The request could not be verified. Reload the page and try again.",
+            csrf_token=session.setdefault("csrf_token", secrets.token_urlsafe(32)),
+        ), 400
+
+    session.clear()
+    session.permanent = True
+    session["guest_id"] = "guest:" + secrets.token_urlsafe(32)
+    session["csrf_token"] = secrets.token_urlsafe(32)
+    return redirect(url_for("home"))
 
 
 @app.route("/auth/logout", methods=["POST"])
@@ -110,35 +167,35 @@ def logout():
 
 
 @app.route("/")
-@login_required
+@workspace_required
 def home():
-    if not get_language_preferences(g.user_id)["language_selected"]:
+    if not get_language_preferences(g.data_user_id)["language_selected"]:
         return render_page("language.html")
     return render_page("index.html")
 
 
 @app.route("/scanner")
-@login_required
+@workspace_required
 def scanner():
-    if not get_language_preferences(g.user_id)["language_selected"]:
+    if not get_language_preferences(g.data_user_id)["language_selected"]:
         return redirect(url_for("home"))
     return render_page("scanner.html")
 
 
 @app.route("/about")
-@login_required
+@workspace_required
 def about():
-    if not get_language_preferences(g.user_id)["language_selected"]:
+    if not get_language_preferences(g.data_user_id)["language_selected"]:
         return redirect(url_for("home"))
     return render_page("about.html")
 
 
 @app.route("/api/language-settings", methods=["GET", "PUT"])
-@login_required
+@workspace_required
 def language_settings():
     if request.method == "GET":
         return jsonify({
-            **get_language_preferences(g.user_id),
+            **get_language_preferences(g.data_user_id),
             "languages": LANGUAGES,
         })
 
@@ -147,7 +204,7 @@ def language_settings():
         return jsonify({"error": "Language settings must be a JSON object."}), 400
     try:
         preferences = save_language_preferences(
-            g.user_id,
+            g.data_user_id,
             data.get("primary_language"),
             data.get("secondary_languages", []),
         )
@@ -248,7 +305,7 @@ def mail_sync_status(provider):
 
 
 @app.route("/emails", methods=["POST"])
-@login_required
+@workspace_required
 def create_email():
     data = request.get_json()
     if not data:
@@ -260,54 +317,79 @@ def create_email():
     if not sender or not subject or not body:
         return jsonify({"error": "sender, subject and body are required"}), 400
 
-    result = receive_email(g.user_id, sender, subject, body)
+    result = receive_email(g.data_user_id, sender, subject, body)
+    return jsonify(result), 201
+
+
+@app.route("/emails/image", methods=["POST"])
+@workspace_required
+def scan_email_image():
+    upload = request.files.get("image")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "Choose an image file to scan."}), 400
+
+    image_bytes = upload.stream.read(MAX_IMAGE_BYTES + 1)
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        return jsonify({"error": "Image uploads must be 8 MB or smaller."}), 413
+
+    try:
+        email = extract_email_from_image(image_bytes)
+    except ImageScanError as error:
+        return jsonify({"error": str(error)}), 400
+
+    result = receive_email(
+        g.data_user_id,
+        email["sender"],
+        email["subject"],
+        email["body"],
+    )
     return jsonify(result), 201
 
 
 @app.route("/emails", methods=["GET", "DELETE"])
-@login_required
+@workspace_required
 def emails():
     if request.method == "DELETE":
         try:
-            deleted_count = clear_saved_emails(g.user_id)
+            deleted_count = clear_saved_emails(g.data_user_id)
         except MailboxError as error:
             return jsonify({
                 "error": str(error),
                 "code": "sync_in_progress",
             }), 409
         return jsonify({"deleted_count": deleted_count})
-    return jsonify(get_all_emails(g.user_id))
+    return jsonify(get_all_emails(g.data_user_id))
 
 
 @app.route("/emails/inbox", methods=["GET"])
-@login_required
+@workspace_required
 def inbox():
-    return jsonify(get_emails_by_status(g.user_id, "inbox"))
+    return jsonify(get_emails_by_status(g.data_user_id, "inbox"))
 
 
 @app.route("/emails/review", methods=["GET"])
-@login_required
+@workspace_required
 def review():
-    return jsonify(get_emails_by_status(g.user_id, "review"))
+    return jsonify(get_emails_by_status(g.data_user_id, "review"))
 
 
 @app.route("/emails/quarantine", methods=["GET"])
-@login_required
+@workspace_required
 def quarantine():
-    return jsonify(get_emails_by_status(g.user_id, "quarantine"))
+    return jsonify(get_emails_by_status(g.data_user_id, "quarantine"))
 
 
 @app.route("/emails/<int:email_id>", methods=["GET"])
-@login_required
+@workspace_required
 def get_single_email(email_id):
-    email = get_email(g.user_id, email_id)
+    email = get_email(g.data_user_id, email_id)
     if not email:
         return jsonify({"error": "Email not found"}), 404
     return jsonify(email)
 
 
 @app.route("/emails/<int:email_id>/move", methods=["PUT"])
-@login_required
+@workspace_required
 def move_email(email_id):
     data = request.get_json()
     if not data or "status" not in data:
@@ -317,9 +399,9 @@ def move_email(email_id):
     allowed_statuses = ["inbox", "review", "quarantine"]
     if new_status not in allowed_statuses:
         return jsonify({"error": "Invalid status"}), 400
-    if not get_email(g.user_id, email_id):
+    if not get_email(g.data_user_id, email_id):
         return jsonify({"error": "Email not found"}), 404
-    update_email_status(g.user_id, email_id, new_status)
+    update_email_status(g.data_user_id, email_id, new_status)
     return jsonify({
         "message": "Email moved successfully",
         "email_id": email_id,
@@ -328,11 +410,11 @@ def move_email(email_id):
 
 
 @app.route("/emails/<int:email_id>", methods=["DELETE"])
-@login_required
+@workspace_required
 def remove_email(email_id):
-    if not get_email(g.user_id, email_id):
+    if not get_email(g.data_user_id, email_id):
         return jsonify({"error": "Email not found"}), 404
-    delete_email(g.user_id, email_id)
+    delete_email(g.data_user_id, email_id)
     return jsonify({"message": "Email deleted successfully"})
 
 
