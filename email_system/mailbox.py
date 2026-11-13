@@ -395,27 +395,23 @@ def _gmail_message(access_token, item):
     }
 
 
-def _gmail_messages(access_token):
-    next_page = None
-    while True:
-        query = {"maxResults": "500"}
-        if next_page:
-            query["pageToken"] = next_page
-        page = _google_json(
-            f"{GOOGLE_API}/users/me/messages?{urlencode(query)}",
-            access_token,
-        )
+def _gmail_messages(access_token, page_token=None, limit=20):
+    query = {"maxResults": str(limit)}
+    if page_token:
+        query["pageToken"] = page_token
+    page = _google_json(
+        f"{GOOGLE_API}/users/me/messages?{urlencode(query)}",
+        access_token,
+    )
 
-        items = page.get("messages", [])
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            yield from executor.map(
-                lambda item: _gmail_message(access_token, item),
-                items,
-            )
-
-        next_page = page.get("nextPageToken")
-        if not next_page:
-            return
+    items = page.get("messages", [])
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        messages = list(executor.map(
+            lambda item: _gmail_message(access_token, item),
+            items,
+        ))
+    next_page = page.get("nextPageToken")
+    return messages, next_page if isinstance(next_page, str) and next_page else None
 
 
 def _set_sync(user_id, status, processed=0, error=None):
@@ -434,16 +430,76 @@ def _set_sync(user_id, status, processed=0, error=None):
     connection.close()
 
 
+def _sync_page_state(user_id):
+    connection = get_connection()
+    row = connection.execute("""
+        SELECT next_page_token, batch_number, has_more
+        FROM mail_syncs WHERE user_id = ? AND provider = ?
+    """, (user_id, PROVIDER)).fetchone()
+    connection.close()
+    if not row:
+        return {
+            "next_page_token": None,
+            "batch_number": 0,
+            "has_more": True,
+        }
+    return {
+        "next_page_token": row["next_page_token"],
+        "batch_number": row["batch_number"],
+        "has_more": bool(row["has_more"]),
+    }
+
+
+def _set_sync_page(user_id, status, processed, error, page_token, batch_number):
+    connection = get_connection()
+    connection.execute("""
+        INSERT INTO mail_syncs
+            (user_id, provider, status, processed, error, next_page_token,
+             batch_number, has_more, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, provider) DO UPDATE SET
+            status = excluded.status,
+            processed = excluded.processed,
+            error = excluded.error,
+            next_page_token = excluded.next_page_token,
+            batch_number = excluded.batch_number,
+            has_more = excluded.has_more,
+            updated_at = excluded.updated_at
+    """, (
+        user_id,
+        PROVIDER,
+        status,
+        processed,
+        error,
+        page_token,
+        batch_number,
+        int(bool(page_token)),
+    ))
+    connection.commit()
+    connection.close()
+
+
 def sync_status(user_id, provider):
     if provider != PROVIDER:
         raise MailboxError("Only Gmail sync is supported.")
     connection = get_connection()
     row = connection.execute("""
-        SELECT status, processed, error, updated_at
+        SELECT status, processed, error, batch_number, has_more, updated_at
         FROM mail_syncs WHERE user_id = ? AND provider = ?
     """, (user_id, PROVIDER)).fetchone()
     connection.close()
-    return dict(row) if row else {"status": "idle", "processed": 0, "error": None}
+    if not row:
+        return {
+            "status": "idle",
+            "processed": 0,
+            "error": None,
+            "batch_number": 0,
+            "has_more": True,
+        }
+    return {
+        **dict(row),
+        "has_more": bool(row["has_more"]),
+    }
 
 
 def clear_saved_emails(user_id):
@@ -457,11 +513,18 @@ def clear_saved_emails(user_id):
 
 def _run_sync(user_id):
     processed = 0
-    batch = []
     try:
         access_token = _access_token(user_id)
         preferences = get_language_preferences(user_id)
-        for message in _gmail_messages(access_token):
+        page_state = _sync_page_state(user_id)
+        batch_size = 20 if page_state["batch_number"] == 0 else 40
+        messages, next_page_token = _gmail_messages(
+            access_token,
+            page_token=page_state["next_page_token"],
+            limit=batch_size,
+        )
+        batch = []
+        for message in messages:
             result = scan_email(
                 message["sender"],
                 message["subject"],
@@ -480,15 +543,17 @@ def _run_sync(user_id):
                 "external_id": message["external_id"],
                 "created_at": message["received_at"],
             })
-            if len(batch) == 100:
-                save_emails(user_id, batch)
-                processed += len(batch)
-                batch.clear()
-                _set_sync(user_id, "running", processed)
         if batch:
             save_emails(user_id, batch)
-            processed += len(batch)
-        _set_sync(user_id, "complete", processed)
+        processed = len(batch)
+        _set_sync_page(
+            user_id,
+            "complete",
+            processed,
+            None,
+            next_page_token,
+            page_state["batch_number"] + 1,
+        )
     except Exception as error:
         logging.getLogger(__name__).exception("Gmail sync failed")
         _set_sync(user_id, "error", processed, str(error))
@@ -504,6 +569,10 @@ def start_sync(user_id, provider):
     try:
         if not list_accounts(user_id):
             raise MailboxError("Gmail is not connected.")
+        if not _sync_page_state(user_id)["has_more"]:
+            status = sync_status(user_id, PROVIDER)
+            _sync_lock.release()
+            return status
         _set_sync(user_id, "running")
         threading.Thread(target=_run_sync, args=(user_id,), daemon=True).start()
     except Exception:

@@ -800,6 +800,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Cleared {count} saved email(s) from this app.",
     "emails.refreshed": "Email list refreshed.",
     "emails.syncActive": "Wait for Gmail sync to finish before clearing saved emails.",
+    "mail.scanNext": "Scan next {count} emails",
     "reason.combination": "Multiple high-risk keywords with supporting signals added {points} points."
   },
   af: {
@@ -809,6 +810,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "{count} gestoorde e-pos(se) uit hierdie toepassing verwyder.",
     "emails.refreshed": "E-poslys verfris.",
     "emails.syncActive": "Wag totdat Gmail-sinkronisering klaar is voordat jy gestoorde e-posse uitvee.",
+    "mail.scanNext": "Skandeer die volgende {count} e-posse",
     "reason.combination": "Verskeie hoërisiko-sleutelwoorde met ondersteunende tekens het {points} punte bygevoeg."
   },
   nr: {
@@ -818,6 +820,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Kusulwe ama-imeyili agciniwe ayi-{count} kuhlelo lolu.",
     "emails.refreshed": "Uhlu lwama-imeyili lubuyekeziwe.",
     "emails.syncActive": "Linda ukuvumelanisa kwe-Gmail kuphele ngaphambi kokusula ama-imeyili agciniwe.",
+    "mail.scanNext": "Skena ama-imeyili alandelayo ayi-{count}",
     "reason.combination": "Amagama amanengi asolisako aneminye imikhondo ephathelene nawo akhuphule amaphuzu ngo-{points}."
   },
   xh: {
@@ -827,6 +830,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Kucinywe ii-imeyile ezigciniweyo eziyi-{count} kule app.",
     "emails.refreshed": "Uluhlu lwee-imeyile luhlaziyiwe.",
     "emails.syncActive": "Lindela ungqamaniso lweGmail lugqitywe ngaphambi kokucima ii-imeyile ezigciniweyo.",
+    "mail.scanNext": "Skena ii-imeyile ezilandelayo eziyi-{count}",
     "reason.combination": "Amagama amaninzi akrokrisayo nezinye iimpawu ezixhasayo ongeze amanqaku ngo-{points}."
   },
   zu: {
@@ -836,6 +840,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Kusuliwe ama-imeyili alondoloziwe angu-{count} kulolu hlelo lokusebenza.",
     "emails.refreshed": "Uhlu lwama-imeyili luvuselelwe.",
     "emails.syncActive": "Linda ukuvumelanisa kwe-Gmail kuqede ngaphambi kokusula ama-imeyili alondoloziwe.",
+    "mail.scanNext": "Skena ama-imeyili alandelayo angu-{count}",
     "reason.combination": "Amagama amaningi asolisayo ahambisana nezinye izimpawu akhuphule amaphuzu ngo-{points}."
   },
   nso: {
@@ -845,6 +850,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Go phumotšwe diimeile tše {count} tše di bolokilwego mo app.",
     "emails.refreshed": "Lenaneo la diimeile le mpshafaditšwe.",
     "emails.syncActive": "Emela gore go nyalantšha Gmail go fele pele o phumola diimeile tše di bolokilwego.",
+    "mail.scanNext": "Sekena diimeile tše {count} tše di latelago",
     "reason.combination": "Mantšu a mantši a kotsi le maswao a mangwe a thekgago a okeditše dintlha ka {points}."
   },
   st: {
@@ -854,6 +860,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Ho hlakotsoe li-imeile tse bolokiloeng tse {count} ho app ena.",
     "emails.refreshed": "Lethathamo la li-imeile le nchafalitsoe.",
     "emails.syncActive": "Ema hore kamahanyo ea Gmail e fele pele u hlakola li-imeile tse bolokiloeng.",
+    "mail.scanNext": "Sekena li-imeile tse {count} tse latelang",
     "reason.combination": "Mantsoe a mangata a kotsi le matšoao a mang a tšehetsang a ekelitse lintlha ka {points}."
   },
   tn: {
@@ -863,6 +870,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Go phimotswe diimeile tse {count} tse di bolokilweng mo app eno.",
     "emails.refreshed": "Lenane la diimeile le ntšhwafaditswe.",
     "emails.syncActive": "Ema tsamaisanyo ya Gmail e fele pele o phimola diimeile tse di bolokilweng.",
+    "mail.scanNext": "Sekena diimeile tse {count} tse di latelang",
     "reason.combination": "Mafoko a mantsi a kotsi le matshwao a mangwe a a a tshegetsang a okeditse dintlha ka {points}."
   },
   ss: {
@@ -872,6 +880,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Kususwe ema-imeyili lagciniwe la-{count} kulolu hlelo.",
     "emails.refreshed": "Luhlu lwema-imeyili luvuselelwe.",
     "emails.syncActive": "Lindza kuvumelanisa kwe-Gmail kuphele ngaphambi kwekususa ema-imeyili lagciniwe.",
+    "mail.scanNext": "Skena ema-imeyili lalandzelako la-{count}",
     "reason.combination": "Emagama lamanyenti lasolisako kanye netimphawu letisekelako akhuphule emaphuzu nga-{points}."
   },
   ve: {
@@ -881,6 +890,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Ho thuthiwa imeili {count} dzo vhulungwaho kha app iyi.",
     "emails.refreshed": "Mutevhe wa imeili wo vusuludzwa.",
     "emails.syncActive": "Lindani u vhekanywa ha Gmail hu fhedze ni saathu thutha imeili dzo vhulungwaho.",
+    "mail.scanNext": "Sikena imeili {count} dzi tevhelaho",
     "reason.combination": "Maipfi manzhi a khombo na tswayo dzi tikedzaho zwo engedza tshikoro nga {points}."
   },
   ts: {
@@ -890,6 +900,7 @@ const extraInterfaceText = {
     "emails.clearSuccess": "Ku suriwile ti-imeyili leti hlayisiweke ta {count} eka app leyi.",
     "emails.refreshed": "Nxaxamelo wa ti-imeyili wu pfuxetiwile.",
     "emails.syncActive": "Lindza ku hlanganisa Gmail ku hela u nga si sula ti-imeyili leti hlayisiweke.",
+    "mail.scanNext": "Skena ti-imeyili tin'wana ta {count} leti landzelaka",
     "reason.combination": "Marito yo tala lama kanakanisaka ni swikombiso leswi ma seketelaka swi engetele mimpimo hi {points}."
   }
 };

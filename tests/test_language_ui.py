@@ -55,6 +55,7 @@ class LanguageUiTests(unittest.TestCase):
             "emails.clearSuccess",
             "emails.refreshed",
             "emails.syncActive",
+            "mail.scanNext",
             "reason.combination",
         }
         for code, row in rows:

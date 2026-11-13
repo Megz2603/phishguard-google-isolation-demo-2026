@@ -277,6 +277,9 @@ def _upgrade_mail_tables(connection):
                 status TEXT NOT NULL,
                 processed INTEGER NOT NULL DEFAULT 0,
                 error TEXT,
+                next_page_token TEXT,
+                batch_number INTEGER NOT NULL DEFAULT 0,
+                has_more INTEGER NOT NULL DEFAULT 1,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, provider)
             )
@@ -292,6 +295,9 @@ def _upgrade_mail_tables(connection):
                 status TEXT NOT NULL,
                 processed INTEGER NOT NULL DEFAULT 0,
                 error TEXT,
+                next_page_token TEXT,
+                batch_number INTEGER NOT NULL DEFAULT 0,
+                has_more INTEGER NOT NULL DEFAULT 1,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, provider)
             )
@@ -305,6 +311,18 @@ def _upgrade_mail_tables(connection):
             FROM mail_syncs_legacy
         """)
         connection.execute("DROP TABLE mail_syncs_legacy")
+    columns = {
+        row["name"] for row in _table_columns(connection, "mail_syncs")
+    }
+    for column, definition in (
+        ("next_page_token", "TEXT"),
+        ("batch_number", "INTEGER NOT NULL DEFAULT 0"),
+        ("has_more", "INTEGER NOT NULL DEFAULT 1"),
+    ):
+        if column not in columns:
+            connection.execute(
+                f"ALTER TABLE mail_syncs ADD COLUMN {column} {definition}"
+            )
 
 
 def claim_legacy_data(user_id, email):

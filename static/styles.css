@@ -456,6 +456,13 @@ h1 {
 .reason-list { display: flex; flex-wrap: wrap; gap: 7px; }
 .reason-chip { padding: 6px 9px; border: 1px solid #e1eeee; border-radius: 6px; background: #fff; color: #607a82; font-size: 9px; }
 .empty-state { padding: 58px 20px; text-align: center; }
+.scan-more-panel {
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+  border-top: 1px solid #eaf0f2;
+}
+.scan-more-panel[hidden] { display: none; }
 .empty-icon {
   display: grid;
   width: 48px;

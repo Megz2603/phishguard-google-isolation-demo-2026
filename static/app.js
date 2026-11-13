@@ -1,5 +1,7 @@
 const list = document.querySelector("#email-list");
 const notice = document.querySelector("#notice");
+const scanMorePanel = document.querySelector("#scan-more-panel");
+const scanMoreButton = document.querySelector("#scan-more-button");
 const composeDialog = document.querySelector("#compose-dialog");
 const emailForm = document.querySelector("#email-form");
 const formError = document.querySelector("#form-error");
@@ -330,7 +332,6 @@ function setGmailCard(account, sync) {
   const state = card.querySelector(".connection-state");
   const email = card.querySelector(".connection-email");
   const connect = card.querySelector(".connect-button");
-  const syncButton = card.querySelector(".sync-button");
   const disconnectButton = card.querySelector(".disconnect-button");
   const oldProgress = card.querySelector(".sync-progress");
   if (oldProgress) oldProgress.remove();
@@ -339,16 +340,19 @@ function setGmailCard(account, sync) {
   const needsImapReconnect = connected && account.auth_method !== "oauth";
   const ready = connected && !needsImapReconnect;
   connect.hidden = ready;
-  syncButton.hidden = !ready;
   disconnectButton.hidden = !connected;
   disconnectButton.disabled = sync?.status === "running";
+  scanMorePanel.hidden = !ready || !sync?.has_more;
+  scanMoreButton.disabled = sync?.status === "running";
+  scanMoreButton.textContent = window.translate("mail.scanNext", {
+    count: Number(sync?.batch_number) > 0 ? 40 : 20
+  });
   email.textContent = account?.email || "";
   state.className = "connection-state";
 
   if (needsImapReconnect) {
     state.textContent = window.translate("mail.reconnect");
     state.classList.add("syncing");
-    syncButton.disabled = true;
   } else if (sync?.status === "running") {
     state.textContent = window.translate("mail.syncing");
     state.classList.add("syncing");
@@ -358,25 +362,20 @@ function setGmailCard(account, sync) {
       window.translate("mail.progress", { count: sync.processed || 0 })
     );
     card.querySelector(".connection-info").append(progress);
-    syncButton.disabled = true;
   } else if (sync?.status === "error") {
     state.textContent = window.translate("mail.syncFailed");
     state.classList.add("error");
-    syncButton.disabled = false;
     if (sync.error) {
       card.querySelector(".connection-info").append(createElement("span", "sync-progress", sync.error));
     }
   } else if (sync?.status === "complete") {
     state.textContent = window.translate("mail.synced", { count: sync.processed });
     state.classList.add("connected");
-    syncButton.disabled = false;
   } else if (ready) {
     state.textContent = window.translate("mail.connected");
     state.classList.add("connected");
-    syncButton.disabled = false;
   } else {
     state.textContent = window.translate("mail.notConnected");
-    syncButton.disabled = false;
   }
 }
 
@@ -415,16 +414,16 @@ async function loadMailboxAccounts() {
   }
 }
 
-document.querySelectorAll(".sync-button").forEach((button) => {
-  button.addEventListener("click", async () => {
-    try {
-      await apiRequest("/mail/sync/google", { method: "POST" });
-      setNotice(window.translate("notice.syncStarted"));
-      await loadMailboxAccounts();
-    } catch (error) {
-      setNotice(error.message, true);
-    }
-  });
+scanMoreButton.addEventListener("click", async () => {
+  scanMoreButton.disabled = true;
+  try {
+    await apiRequest("/mail/sync/google", { method: "POST" });
+    setNotice(window.translate("notice.syncStarted"));
+    await loadMailboxAccounts();
+  } catch (error) {
+    setNotice(error.message, true);
+    await loadMailboxAccounts();
+  }
 });
 
 document.querySelectorAll(".disconnect-button").forEach((button) => {

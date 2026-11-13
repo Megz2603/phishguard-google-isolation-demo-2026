@@ -120,7 +120,6 @@
               </div>
               <div class="connection-actions">
                 <a class="connect-button" href="/auth/google" data-i18n="mail.signIn">Sign in with Google</a>
-                <button class="sync-button" type="button" hidden data-i18n="mail.sync">Sync mailbox</button>
                 <button class="disconnect-button" type="button" hidden data-i18n="mail.disconnect">Disconnect</button>
               </div>
             </article>
@@ -159,6 +158,9 @@
           </div>
           <div id="notice" class="notice" role="status" hidden></div>
           <div class="email-list" id="email-list" aria-live="polite"></div>
+          <div class="scan-more-panel" id="scan-more-panel" role="status" aria-live="polite" hidden>
+            <button class="primary-button" id="scan-more-button" type="button"></button>
+          </div>
         </section>
         <p class="disclaimer" data-i18n="disclaimer">Risk scores are based on simple rules and should be used as a screening aid, not a guarantee.</p>
       </section>

@@ -421,6 +421,15 @@ class AuthenticationIsolationTests(unittest.TestCase):
                 self.assertIsNone(connection.execute(
                     "SELECT user_id FROM mail_syncs WHERE provider = 'google'"
                 ).fetchone()["user_id"])
+                sync_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(mail_syncs)")
+                }
+                self.assertTrue({
+                    "next_page_token",
+                    "batch_number",
+                    "has_more",
+                }.issubset(sync_columns))
             finally:
                 connection.close()
 

@@ -162,12 +162,14 @@ Create a **Web Service** from this repository and use:
 
 In the service's environment settings, add `APP_ENV=production`,
 `APP_SECRET_KEY`, `APP_DATA_ENCRYPTION_KEY`, `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`. Generate the two keys using
-the commands above. After Render gives the service a URL, set the callback to
-`https://<your-service>.onrender.com/auth/google/callback` and register that
+`GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and
+`DATABASE_PATH=/tmp/phishguard-demo.db`. The separate database path avoids
+loading any existing local `emails.db` in the repository. Generate the two keys
+using the commands above. After Render gives the service a URL, set the callback
+to `https://<your-service>.onrender.com/auth/google/callback` and register that
 exact URL in the Google OAuth client. For Google's consent screen in Testing
 mode, add each test account as a test user. Public use of Gmail's restricted
-read-only scope may require Google's OAuth verification before inviting general
+read-only scope requires Google's OAuth verification before inviting general
 users. Leave `LEGACY_DATA_OWNER_EMAIL` unset for a fresh demo database.
 
 This is only for testing: Render's free service sleeps after inactivity and
@@ -177,9 +179,12 @@ mail there. The app is configured for one worker process; the free service is
 for a small demo, not production.
 
 Sync imports regular Gmail messages (excluding Spam and Trash), including
-headers and text bodies; attachments are not downloaded. Imported messages
-remain in the local database after disconnecting. The app does not send, label,
-move, or delete mail in Gmail. Repeated syncs do not create duplicate messages.
+headers and text bodies; attachments are not downloaded. The first Gmail
+connection scans up to 20 messages. The **Scan next** button below the email list
+then scans up to 40 more messages per click, until Gmail has no more pages.
+Imported messages remain in the local database after disconnecting. The app
+does not send, label, move, or delete mail in Gmail. Repeated syncs do not create
+duplicate messages.
 
 ## Run
 
@@ -191,10 +196,11 @@ Open the dashboard at:
 
 http://127.0.0.1:5000
 
-The dashboard lets you sync and scan the signed-in user's Gmail, submit emails
+The dashboard lets you scan the signed-in user's Gmail in batches, submit emails
 manually, filter results by status, view detection reasons, move emails
 between Inbox, Review and Quarantine, or delete local copies. **Refresh**
-reloads the saved email list; use **Sync mailbox** to fetch new Gmail messages.
+reloads the saved email list; use **Scan next** below the list to fetch the next
+Gmail batch.
 **Clear saved emails** removes the signed-in user's email records, but keeps
 their language settings and Gmail connection. It does not delete Gmail
 messages; a later sync can import them again.
