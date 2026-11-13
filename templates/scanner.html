@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f7fb">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title data-i18n="emailSecurity">PhishGuard | Email security</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <script src="{{ url_for('static', filename='language.js') }}" defer></script>
@@ -64,6 +65,11 @@
         <span class="online-dot"></span> <span data-i18n="system.operational">System operational</span>
     </span>
     <span class="avatar" aria-label="User" data-i18n-aria-label="user">PG</span>
+    <span class="connection-email">{{ user_email }}</span>
+    <form action="{{ url_for('logout') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary-button" type="submit">Sign out</button>
+    </form>
 </div>
       </header>
 

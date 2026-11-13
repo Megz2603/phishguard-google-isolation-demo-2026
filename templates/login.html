@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Sign in | PhishGuard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <main class="language-gate">
+    <section class="language-gate-card">
+      <a class="brand" href="/">PhishGuard</a>
+      <div class="eyebrow">SECURE WORKSPACE</div>
+      <h1>Sign in to PhishGuard</h1>
+      <p>Your saved messages and settings are private to your Google account.</p>
+      {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+      <a class="primary-button" href="{{ url_for('connect_gmail') }}">Sign in with Google</a>
+    </section>
+  </main>
+</body>
+</html>

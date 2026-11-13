@@ -14,7 +14,7 @@ def _decode_email(row):
 
 
 def save_email(
-    sender, subject, body, risk_score, status, reasons,
+    user_id, sender, subject, body, risk_score, status, reasons,
     provider=None, external_id=None, created_at=None
 ):
     """Scan results are stored with all message content encrypted."""
@@ -26,22 +26,24 @@ def save_email(
     if provider and external_id:
         connection.execute("""
             INSERT OR IGNORE INTO emails
-            (sender, subject, body, risk_score, status, reasons,
+            (user_id, sender, subject, body, risk_score, status, reasons,
              provider, external_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
         """, (
-            content[0], content[1], content[2], risk_score, status,
+            user_id, content[0], content[1], content[2], risk_score, status,
             content[3], provider, external_id, created_at
         ))
         email_id = connection.execute("""
-            SELECT id FROM emails WHERE provider = ? AND external_id = ?
-        """, (provider, external_id)).fetchone()["id"]
+            SELECT id FROM emails
+            WHERE user_id = ? AND provider = ? AND external_id = ?
+        """, (user_id, provider, external_id)).fetchone()["id"]
     else:
         cursor = connection.execute("""
-            INSERT INTO emails (sender, subject, body, risk_score, status, reasons)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO emails
+                (user_id, sender, subject, body, risk_score, status, reasons)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
-            content[0], content[1], content[2],
+            user_id, content[0], content[1], content[2],
             risk_score, status, content[3]
         ))
         email_id = cursor.lastrowid
@@ -51,8 +53,8 @@ def save_email(
     return email_id
 
 
-def save_emails(emails):
-    """Encrypt and insert a mailbox batch in one SQLite transaction."""
+def save_emails(user_id, emails):
+    """Encrypt and insert a mailbox batch in one transaction."""
     encrypted_rows = []
     for email in emails:
         content = tuple(encrypt_field(email[field]) for field in (
@@ -74,10 +76,10 @@ def save_emails(emails):
     try:
         connection.executemany("""
             INSERT OR IGNORE INTO emails
-            (sender, subject, body, risk_score, status, reasons,
+            (user_id, sender, subject, body, risk_score, status, reasons,
              provider, external_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
-        """, encrypted_rows)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+        """, [(user_id, *row) for row in encrypted_rows])
         connection.commit()
     finally:
         connection.close()
@@ -90,48 +92,54 @@ def _get_emails(query, parameters=()):
     return [_decode_email(row) for row in rows]
 
 
-def get_all_emails():
-    return _get_emails("SELECT * FROM emails ORDER BY created_at DESC")
-
-
-def get_emails_by_status(status):
+def get_all_emails(user_id):
     return _get_emails(
-        "SELECT * FROM emails WHERE status = ? ORDER BY created_at DESC",
-        (status,)
+        "SELECT * FROM emails WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,),
     )
 
 
-def get_email(email_id):
+def get_emails_by_status(user_id, status):
+    return _get_emails(
+        "SELECT * FROM emails WHERE user_id = ? AND status = ? ORDER BY created_at DESC",
+        (user_id, status)
+    )
+
+
+def get_email(user_id, email_id):
     connection = get_connection()
     row = connection.execute(
-        "SELECT * FROM emails WHERE id = ?", (email_id,)
+        "SELECT * FROM emails WHERE user_id = ? AND id = ?", (user_id, email_id)
     ).fetchone()
     connection.close()
     return _decode_email(row) if row else None
 
 
-def update_email_status(email_id, status):
+def update_email_status(user_id, email_id, status):
     connection = get_connection()
     connection.execute(
-        "UPDATE emails SET status = ? WHERE id = ?", (status, email_id)
+        "UPDATE emails SET status = ? WHERE user_id = ? AND id = ?",
+        (status, user_id, email_id)
     )
     connection.commit()
     connection.close()
 
 
-def delete_email(email_id):
+def delete_email(user_id, email_id):
     connection = get_connection()
     try:
-        connection.execute("DELETE FROM emails WHERE id = ?", (email_id,))
+        connection.execute(
+            "DELETE FROM emails WHERE user_id = ? AND id = ?", (user_id, email_id)
+        )
         connection.commit()
     finally:
         connection.close()
 
 
-def delete_all_emails():
+def delete_all_emails(user_id):
     connection = get_connection()
     try:
-        cursor = connection.execute("DELETE FROM emails")
+        cursor = connection.execute("DELETE FROM emails WHERE user_id = ?", (user_id,))
         connection.commit()
         return cursor.rowcount
     finally:

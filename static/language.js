@@ -986,7 +986,10 @@ function selectedSecondaryLanguages() {
 async function saveLanguageSettings(primaryLanguage, secondaryLanguages) {
   const response = await fetch("/api/language-settings", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || ""
+    },
     body: JSON.stringify({
       primary_language: primaryLanguage,
       secondary_languages: secondaryLanguages

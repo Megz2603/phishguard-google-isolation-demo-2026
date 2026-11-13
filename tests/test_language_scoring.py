@@ -1,7 +1,10 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from cryptography.fernet import Fernet
 
 from database import (
     get_language_preferences,
@@ -73,15 +76,20 @@ class LanguageScoringTests(unittest.TestCase):
 
     def test_language_preferences_persist_in_the_database(self):
         with tempfile.TemporaryDirectory() as directory:
-            with patch("database.DATABASE", str(Path(directory) / "settings.db")):
+            with (
+                patch("database.DATABASE", str(Path(directory) / "settings.db")),
+                patch.dict(os.environ, {
+                    "APP_DATA_ENCRYPTION_KEY": Fernet.generate_key().decode("ascii"),
+                }),
+            ):
                 initialise_database()
-                self.assertFalse(get_language_preferences()["language_selected"])
-                saved = save_language_preferences("xh", ["zu", "af"])
+                self.assertFalse(get_language_preferences("user-a")["language_selected"])
+                saved = save_language_preferences("user-a", "xh", ["zu", "af"])
                 self.assertEqual(saved, {
                     "primary_language": "xh",
                     "secondary_languages": ["zu", "af"],
                 })
-                self.assertEqual(get_language_preferences(), {
+                self.assertEqual(get_language_preferences("user-a"), {
                     **saved,
                     "language_selected": True,
                 })

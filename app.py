@@ -1,6 +1,21 @@
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+import hmac
+import os
+import secrets
+from datetime import timedelta
+from functools import wraps
 
-from database import initialise_database
+from flask import (
+    Flask,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+
+from database import initialise_database, get_language_preferences, save_language_preferences
 from email_system.mailbox import (
     MailboxError,
     authorization_url,
@@ -17,56 +32,113 @@ from models import (
     get_emails_by_status,
     get_email,
     update_email_status,
-    delete_email
+    delete_email,
 )
 from email_system.receiver import receive_email
-from database import get_language_preferences, save_language_preferences
 from scanner.languages import LANGUAGES
 
-app = Flask(__name__)
 
-# Verify DPAPI access and migrate any older database rows before serving requests.
+app = Flask(__name__)
+app_secret = os.environ.get("APP_SECRET_KEY", "")
+if len(app_secret) < 32:
+    raise RuntimeError(
+        "Set APP_SECRET_KEY to a random secret of at least 32 characters before starting the app."
+    )
+app.config.update(
+    SECRET_KEY=app_secret,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("APP_ENV", "").lower() == "production",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+)
+if os.environ.get("APP_ENV", "").lower() == "production" and not os.environ.get(
+    "GOOGLE_REDIRECT_URI", ""
+).startswith("https://"):
+    raise RuntimeError(
+        "Production requires GOOGLE_REDIRECT_URI to be an HTTPS callback URL."
+    )
+
 initialise_database()
 unlock_oauth_credentials()
 
 
-# WELCOME PAGE
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not g.user_id:
+            if request.path.startswith(("/api/", "/emails", "/mail/")):
+                return jsonify({"error": "Sign in with Google to continue."}), 401
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.before_request
+def load_user_and_check_csrf():
+    g.user_id = session.get("user_id")
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and g.user_id:
+        expected = session.get("csrf_token", "")
+        supplied = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token", "")
+        if not expected or not hmac.compare_digest(
+            expected.encode("utf-8"), supplied.encode("utf-8")
+        ):
+            return jsonify({"error": "The request could not be verified. Reload the page and try again."}), 400
+
+
 def render_page(template):
     return render_template(
         template,
         languages=LANGUAGES,
-        language_preferences=get_language_preferences(),
+        language_preferences=get_language_preferences(g.user_id),
+        csrf_token=session.setdefault("csrf_token", secrets.token_urlsafe(32)),
+        user_email=session.get("user_email", ""),
     )
 
 
+@app.route("/login")
+def login():
+    if g.user_id:
+        return redirect(url_for("home"))
+    return render_template("login.html", error=request.args.get("error", ""))
+
+
+@app.route("/auth/logout", methods=["POST"])
+@login_required
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 @app.route("/")
+@login_required
 def home():
-    if not get_language_preferences()["language_selected"]:
+    if not get_language_preferences(g.user_id)["language_selected"]:
         return render_page("language.html")
     return render_page("index.html")
 
 
-# EMAIL SCANNER DASHBOARD
 @app.route("/scanner")
+@login_required
 def scanner():
-    if not get_language_preferences()["language_selected"]:
+    if not get_language_preferences(g.user_id)["language_selected"]:
         return redirect(url_for("home"))
     return render_page("scanner.html")
 
 
-# ABOUT PAGE
 @app.route("/about")
+@login_required
 def about():
-    if not get_language_preferences()["language_selected"]:
+    if not get_language_preferences(g.user_id)["language_selected"]:
         return redirect(url_for("home"))
     return render_page("about.html")
 
 
 @app.route("/api/language-settings", methods=["GET", "PUT"])
+@login_required
 def language_settings():
     if request.method == "GET":
         return jsonify({
-            **get_language_preferences(),
+            **get_language_preferences(g.user_id),
             "languages": LANGUAGES,
         })
 
@@ -75,6 +147,7 @@ def language_settings():
         return jsonify({"error": "Language settings must be a JSON object."}), 400
     try:
         preferences = save_language_preferences(
+            g.user_id,
             data.get("primary_language"),
             data.get("secondary_languages", []),
         )
@@ -92,9 +165,10 @@ def health():
 
 
 @app.after_request
-def prevent_email_caching(response):
-    # API responses contain decrypted message content for the dashboard.
-    if request.path.startswith(("/emails", "/mail/")):
+def prevent_private_response_caching(response):
+    if request.path.startswith(("/api/", "/emails", "/mail/")) or request.path in {
+        "/", "/scanner", "/about"
+    }:
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -102,131 +176,150 @@ def prevent_email_caching(response):
 @app.route("/auth/google")
 def connect_gmail():
     try:
-        login_url, _ = authorization_url()
+        session.clear()
+        login_url, state = authorization_url()
+        session["oauth_state"] = state
         return redirect(login_url)
     except MailboxError as error:
-        return redirect(url_for("scanner", mail_error=str(error)))
+        return redirect(url_for("login", error=str(error)))
 
 
 @app.route("/auth/google/callback")
 def gmail_callback():
     if request.args.get("error"):
-        return redirect(url_for("scanner", mail_error="Google sign-in was canceled."))
+        return redirect(url_for("login", error="Google sign-in was canceled."))
+    expected_state = session.pop("oauth_state", None)
+    state = request.args.get("state", "")
+    if not expected_state or not state or not hmac.compare_digest(
+        expected_state.encode("utf-8"), state.encode("utf-8")
+    ):
+        return redirect(url_for("login", error="Sign-in could not be verified. Please try again."))
     try:
-        finish_authorization(request.args.get("state"), request.args.get("code"))
-        start_sync("google")
-        return redirect(url_for("scanner", connected="google"))
+        identity = finish_authorization(state, request.args.get("code"))
+        session.clear()
+        session.permanent = True
+        session["user_id"] = identity["id"]
+        session["user_email"] = identity["email"]
+        session["csrf_token"] = secrets.token_urlsafe(32)
+    except MailboxError as error:
+        return redirect(url_for("login", error=str(error)))
+    try:
+        start_sync(identity["id"], "google")
     except MailboxError as error:
         return redirect(url_for("scanner", mail_error=str(error)))
+    return redirect(url_for("scanner", connected="google"))
 
 
 @app.route("/mail/accounts", methods=["GET"])
+@login_required
 def mail_accounts():
-    return jsonify(list_accounts())
+    try:
+        return jsonify(list_accounts(g.user_id))
+    except MailboxError as error:
+        return jsonify({"error": str(error)}), 400
 
 
 @app.route("/mail/accounts/<provider>", methods=["DELETE"])
+@login_required
 def remove_mail_account(provider):
     try:
-        disconnect_account(provider)
+        disconnect_account(g.user_id, provider)
     except MailboxError as error:
         return jsonify({"error": str(error)}), 400
     return jsonify({"message": "Email account disconnected. Imported messages remain in the local database."})
 
 
 @app.route("/mail/sync/<provider>", methods=["POST"])
+@login_required
 def sync_mailbox(provider):
     try:
-        return jsonify(start_sync(provider)), 202
+        return jsonify(start_sync(g.user_id, provider)), 202
     except MailboxError as error:
         return jsonify({"error": str(error)}), 400
 
 
 @app.route("/mail/sync/<provider>/status", methods=["GET"])
+@login_required
 def mail_sync_status(provider):
     try:
-        return jsonify(sync_status(provider))
+        return jsonify(sync_status(g.user_id, provider))
     except MailboxError as error:
         return jsonify({"error": str(error)}), 400
 
 
 @app.route("/emails", methods=["POST"])
+@login_required
 def create_email():
     data = request.get_json()
-
     if not data:
         return jsonify({"error": "No email data supplied"}), 400
 
     sender = data.get("sender")
     subject = data.get("subject")
     body = data.get("body")
-
     if not sender or not subject or not body:
-        return jsonify({
-            "error": "sender, subject and body are required"
-        }), 400
+        return jsonify({"error": "sender, subject and body are required"}), 400
 
-    result = receive_email(sender, subject, body)
+    result = receive_email(g.user_id, sender, subject, body)
     return jsonify(result), 201
 
 
 @app.route("/emails", methods=["GET", "DELETE"])
+@login_required
 def emails():
     if request.method == "DELETE":
         try:
-            deleted_count = clear_saved_emails()
+            deleted_count = clear_saved_emails(g.user_id)
         except MailboxError as error:
             return jsonify({
                 "error": str(error),
                 "code": "sync_in_progress",
             }), 409
         return jsonify({"deleted_count": deleted_count})
-    return jsonify(get_all_emails())
+    return jsonify(get_all_emails(g.user_id))
 
 
 @app.route("/emails/inbox", methods=["GET"])
+@login_required
 def inbox():
-    return jsonify(get_emails_by_status("inbox"))
+    return jsonify(get_emails_by_status(g.user_id, "inbox"))
 
 
 @app.route("/emails/review", methods=["GET"])
+@login_required
 def review():
-    return jsonify(get_emails_by_status("review"))
+    return jsonify(get_emails_by_status(g.user_id, "review"))
 
 
 @app.route("/emails/quarantine", methods=["GET"])
+@login_required
 def quarantine():
-    return jsonify(get_emails_by_status("quarantine"))
+    return jsonify(get_emails_by_status(g.user_id, "quarantine"))
 
 
 @app.route("/emails/<int:email_id>", methods=["GET"])
+@login_required
 def get_single_email(email_id):
-    email = get_email(email_id)
-
+    email = get_email(g.user_id, email_id)
     if not email:
         return jsonify({"error": "Email not found"}), 404
-
     return jsonify(email)
 
 
 @app.route("/emails/<int:email_id>/move", methods=["PUT"])
+@login_required
 def move_email(email_id):
     data = request.get_json()
-
     if not data or "status" not in data:
         return jsonify({"error": "Status is required"}), 400
 
     new_status = data["status"]
     allowed_statuses = ["inbox", "review", "quarantine"]
-
     if new_status not in allowed_statuses:
         return jsonify({"error": "Invalid status"}), 400
-
-    if not get_email(email_id):
+    if not get_email(g.user_id, email_id):
         return jsonify({"error": "Email not found"}), 404
-
-    update_email_status(email_id, new_status)
-
+    update_email_status(g.user_id, email_id, new_status)
     return jsonify({
         "message": "Email moved successfully",
         "email_id": email_id,
@@ -235,11 +328,11 @@ def move_email(email_id):
 
 
 @app.route("/emails/<int:email_id>", methods=["DELETE"])
+@login_required
 def remove_email(email_id):
-    if not get_email(email_id):
+    if not get_email(g.user_id, email_id):
         return jsonify({"error": "Email not found"}), 404
-
-    delete_email(email_id)
+    delete_email(g.user_id, email_id)
     return jsonify({"message": "Email deleted successfully"})
 
 

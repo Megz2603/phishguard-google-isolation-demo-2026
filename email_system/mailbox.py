@@ -17,7 +17,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from database import get_connection, get_language_preferences
+from database import (
+    claim_legacy_data,
+    consume_oauth_login,
+    get_connection,
+    get_language_preferences,
+    store_oauth_login,
+)
 from email_system.encryption import (
     EncryptionError,
     decrypt_secret,
@@ -40,7 +46,6 @@ GOOGLE_API = "https://gmail.googleapis.com/gmail/v1"
 GOOGLE_USER_INFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 GOOGLE_SCOPE = "openid email https://www.googleapis.com/auth/gmail.readonly"
 _sync_lock = threading.Lock()
-_pending_logins = {}
 _oauth_settings_lock = threading.Lock()
 _cached_oauth_credentials = None
 
@@ -151,20 +156,21 @@ def _google_json(url, access_token):
 
 
 def authorization_url():
-    """Start a short-lived PKCE login; OAuth state stays in process memory."""
+    """Create a PKCE login; the caller binds state and verifier to its session."""
     client_id, _, callback = _oauth_settings()
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(
         hashlib.sha256(verifier.encode("ascii")).digest()
     ).decode("ascii").rstrip("=")
     state = secrets.token_urlsafe(32)
-    _pending_logins[state] = (verifier, time.time() + 600)
-
-    # Discard expired states so abandoned login attempts do not accumulate.
-    for old_state, (_, expires) in list(_pending_logins.items()):
-        if expires < time.time():
-            _pending_logins.pop(old_state, None)
-
+    try:
+        store_oauth_login(
+            state,
+            encrypt_secret(verifier),
+            int(time.time()) + 600,
+        )
+    except EncryptionError as error:
+        raise MailboxError(str(error)) from error
     query = urlencode({
         "client_id": client_id,
         "redirect_uri": callback,
@@ -180,28 +186,47 @@ def authorization_url():
 
 
 def finish_authorization(state, code):
-    """Exchange a one-use OAuth code, then save its token with Windows DPAPI."""
-    login = _pending_logins.pop(state or "", None)
-    if not login or login[1] < time.time():
-        raise MailboxError("Sign-in expired or could not be verified. Try connecting again.")
-
+    """Consume one-use OAuth state and persist only a verified Google identity."""
+    encrypted_verifier = consume_oauth_login(state or "")
+    if not code or not encrypted_verifier:
+        raise MailboxError("Sign-in expired or could not be verified. Try again.")
+    try:
+        verifier = decrypt_secret(encrypted_verifier)
+    except EncryptionError as error:
+        raise MailboxError(str(error)) from error
     client_id, client_secret, callback = _oauth_settings()
     tokens = _form_post(GOOGLE_TOKEN_URL, {
         "client_id": client_id,
         "client_secret": client_secret,
         "code": code,
-        "code_verifier": login[0],
+        "code_verifier": verifier,
         "grant_type": "authorization_code",
         "redirect_uri": callback,
     })
+    if not isinstance(tokens, dict):
+        raise MailboxError("Google returned an invalid token response.")
     access_token = tokens.get("access_token")
-    if not access_token:
+    if not isinstance(access_token, str) or not access_token:
         raise MailboxError("Google did not return an access token.")
 
     profile = _google_json(GOOGLE_USER_INFO_URL, access_token)
+    if not isinstance(profile, dict):
+        raise MailboxError("Google returned an invalid account profile.")
     email_address = profile.get("email")
-    if not email_address:
-        raise MailboxError("Google did not return the signed-in email address.")
+    user_id = profile.get("sub")
+    if (
+        not isinstance(user_id, str)
+        or not user_id
+        or not isinstance(email_address, str)
+        or not email_address.strip()
+        or profile.get("email_verified") is not True
+    ):
+        raise MailboxError("Google did not return a verified account identity.")
+    email_address = email_address.strip()
+    try:
+        claim_legacy_data(user_id, email_address)
+    except ValueError as error:
+        raise MailboxError(str(error)) from error
 
     tokens["email"] = email_address
     tokens["expires_at"] = int(time.time()) + int(tokens.get("expires_in", 3600))
@@ -214,23 +239,25 @@ def finish_authorization(state, code):
     connection = get_connection()
     connection.execute("""
         INSERT INTO mail_accounts
-            (provider, email, encrypted_token, auth_method, updated_at)
-        VALUES (?, ?, ?, 'oauth', CURRENT_TIMESTAMP)
-        ON CONFLICT(provider) DO UPDATE SET
+            (user_id, provider, email, encrypted_token, auth_method, updated_at)
+        VALUES (?, ?, ?, ?, 'oauth', CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, provider) DO UPDATE SET
             email = excluded.email,
             encrypted_token = excluded.encrypted_token,
             auth_method = 'oauth',
             updated_at = CURRENT_TIMESTAMP
-    """, (PROVIDER, encrypted_email, encrypted_token))
+    """, (user_id, PROVIDER, encrypted_email, encrypted_token))
     connection.commit()
     connection.close()
+    return {"id": user_id, "email": email_address}
 
 
-def _access_token():
+def _access_token(user_id):
     connection = get_connection()
     row = connection.execute("""
         SELECT encrypted_token FROM mail_accounts WHERE provider = ?
-    """, (PROVIDER,)).fetchone()
+        AND user_id = ?
+    """, (PROVIDER, user_id)).fetchone()
     connection.close()
     if not row:
         raise MailboxError("Gmail is not connected.")
@@ -259,19 +286,19 @@ def _access_token():
     connection = get_connection()
     connection.execute("""
         UPDATE mail_accounts SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE provider = ?
-    """, (encrypt_secret(json.dumps(tokens)), PROVIDER))
+        WHERE provider = ? AND user_id = ?
+    """, (encrypt_secret(json.dumps(tokens)), PROVIDER, user_id))
     connection.commit()
     connection.close()
     return tokens["access_token"]
 
 
-def list_accounts():
+def list_accounts(user_id):
     connection = get_connection()
     rows = connection.execute("""
         SELECT provider, email, auth_method FROM mail_accounts
-        WHERE provider = ?
-    """, (PROVIDER,)).fetchall()
+        WHERE user_id = ? AND provider = ?
+    """, (user_id, PROVIDER)).fetchall()
     connection.close()
     try:
         return [
@@ -282,15 +309,21 @@ def list_accounts():
         raise MailboxError(str(error)) from error
 
 
-def disconnect_account(provider):
+def disconnect_account(user_id, provider):
     if provider != PROVIDER:
         raise MailboxError("Only Gmail is supported.")
     if not _sync_lock.acquire(blocking=False):
         raise MailboxError("Wait for Gmail sync to finish before disconnecting.")
     try:
         connection = get_connection()
-        connection.execute("DELETE FROM mail_accounts WHERE provider = ?", (PROVIDER,))
-        connection.execute("DELETE FROM mail_syncs WHERE provider = ?", (PROVIDER,))
+        connection.execute(
+            "DELETE FROM mail_accounts WHERE user_id = ? AND provider = ?",
+            (user_id, PROVIDER),
+        )
+        connection.execute(
+            "DELETE FROM mail_syncs WHERE user_id = ? AND provider = ?",
+            (user_id, PROVIDER),
+        )
         connection.commit()
         connection.close()
     finally:
@@ -385,48 +418,49 @@ def _gmail_messages(access_token):
             return
 
 
-def _set_sync(status, processed=0, error=None):
+def _set_sync(user_id, status, processed=0, error=None):
     connection = get_connection()
     connection.execute("""
-        INSERT INTO mail_syncs (provider, status, processed, error, updated_at)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(provider) DO UPDATE SET
+        INSERT INTO mail_syncs
+            (user_id, provider, status, processed, error, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, provider) DO UPDATE SET
             status = excluded.status,
             processed = excluded.processed,
             error = excluded.error,
             updated_at = CURRENT_TIMESTAMP
-    """, (PROVIDER, status, processed, error))
+    """, (user_id, PROVIDER, status, processed, error))
     connection.commit()
     connection.close()
 
 
-def sync_status(provider):
+def sync_status(user_id, provider):
     if provider != PROVIDER:
         raise MailboxError("Only Gmail sync is supported.")
     connection = get_connection()
     row = connection.execute("""
         SELECT status, processed, error, updated_at
-        FROM mail_syncs WHERE provider = ?
-    """, (PROVIDER,)).fetchone()
+        FROM mail_syncs WHERE user_id = ? AND provider = ?
+    """, (user_id, PROVIDER)).fetchone()
     connection.close()
     return dict(row) if row else {"status": "idle", "processed": 0, "error": None}
 
 
-def clear_saved_emails():
+def clear_saved_emails(user_id):
     if not _sync_lock.acquire(blocking=False):
         raise MailboxError("Cannot clear saved emails while Gmail sync is running.")
     try:
-        return delete_all_emails()
+        return delete_all_emails(user_id)
     finally:
         _sync_lock.release()
 
 
-def _run_sync():
+def _run_sync(user_id):
     processed = 0
     batch = []
     try:
-        access_token = _access_token()
-        preferences = get_language_preferences()
+        access_token = _access_token(user_id)
+        preferences = get_language_preferences(user_id)
         for message in _gmail_messages(access_token):
             result = scan_email(
                 message["sender"],
@@ -447,32 +481,32 @@ def _run_sync():
                 "created_at": message["received_at"],
             })
             if len(batch) == 100:
-                save_emails(batch)
+                save_emails(user_id, batch)
                 processed += len(batch)
                 batch.clear()
-                _set_sync("running", processed)
+                _set_sync(user_id, "running", processed)
         if batch:
-            save_emails(batch)
+            save_emails(user_id, batch)
             processed += len(batch)
-        _set_sync("complete", processed)
+        _set_sync(user_id, "complete", processed)
     except Exception as error:
         logging.getLogger(__name__).exception("Gmail sync failed")
-        _set_sync("error", processed, str(error))
+        _set_sync(user_id, "error", processed, str(error))
     finally:
         _sync_lock.release()
 
 
-def start_sync(provider):
+def start_sync(user_id, provider):
     if provider != PROVIDER:
         raise MailboxError("Only Gmail sync is supported.")
     if not _sync_lock.acquire(blocking=False):
         raise MailboxError("Gmail mailbox sync is already running.")
     try:
-        if not list_accounts():
+        if not list_accounts(user_id):
             raise MailboxError("Gmail is not connected.")
-        _set_sync("running")
-        threading.Thread(target=_run_sync, daemon=True).start()
+        _set_sync(user_id, "running")
+        threading.Thread(target=_run_sync, args=(user_id,), daemon=True).start()
     except Exception:
         _sync_lock.release()
         raise
-    return sync_status(PROVIDER)
+    return sync_status(user_id, PROVIDER)

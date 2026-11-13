@@ -68,7 +68,14 @@ function setNotice(message, isError = false) {
 }
 
 async function apiRequest(url, options = {}) {
-  const response = await fetch(url, options);
+  const headers = new Headers(options.headers || {});
+  if (["POST", "PUT", "PATCH", "DELETE"].includes((options.method || "GET").toUpperCase())) {
+    headers.set(
+      "X-CSRF-Token",
+      document.querySelector('meta[name="csrf-token"]')?.content || ""
+    );
+  }
+  const response = await fetch(url, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
   const result = contentType.includes("application/json")
     ? await response.json()

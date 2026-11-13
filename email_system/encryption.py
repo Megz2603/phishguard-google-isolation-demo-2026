@@ -6,7 +6,8 @@ from ctypes import wintypes
 from cryptography.fernet import Fernet, InvalidToken
 
 
-FIELD_PREFIX = "encrypted:v2:"
+FIELD_PREFIX = "encrypted:v3:"
+DPAPI_FIELD_PREFIX = "encrypted:v2:"
 LEGACY_FIELD_PREFIX = "encrypted:v1:"
 KEY_CHECK = b"phishing-detector-email-encryption-v2"
 LEGACY_KEY_CHECK = b"phishing-detector-email-encryption-v1"
@@ -15,7 +16,7 @@ CRYPTPROTECT_UI_FORBIDDEN = 0x01
 
 
 class EncryptionError(ValueError):
-    """Raised when Windows cannot protect or open saved private data."""
+    """Raised when the configured encryption key cannot protect private data."""
 
 
 class _DataBlob(ctypes.Structure):
@@ -72,27 +73,60 @@ def _dpapi(data, protect):
         kernel32.LocalFree(result.data)
 
 
-def encrypt_secret(value):
-    """Protect an account token or other private text for this Windows user."""
+def _portable_cipher():
+    key = os.environ.get("APP_DATA_ENCRYPTION_KEY")
+    if not key:
+        return None
     try:
-        protected = _dpapi(value.encode("utf-8"), protect=True)
+        return Fernet(key.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as error:
+        raise EncryptionError(
+            "APP_DATA_ENCRYPTION_KEY must be a valid Fernet key."
+        ) from error
+
+
+def encrypt_secret(value):
+    """Encrypt private text with a configured key or Windows DPAPI."""
+    try:
+        plaintext = value.encode("utf-8")
+        cipher = _portable_cipher()
+        if cipher:
+            return FIELD_PREFIX + cipher.encrypt(plaintext).decode("ascii")
+        if os.name != "nt":
+            raise EncryptionError(
+                "Set APP_DATA_ENCRYPTION_KEY to a Fernet key for non-Windows hosting."
+            )
     except (OSError, UnicodeEncodeError) as error:
-        raise EncryptionError(f"Windows could not protect private data: {error}") from error
-    return FIELD_PREFIX + base64.urlsafe_b64encode(protected).decode("ascii")
+        raise EncryptionError(f"Could not encrypt private data: {error}") from error
+    protected = _dpapi(plaintext, protect=True)
+    return DPAPI_FIELD_PREFIX + base64.urlsafe_b64encode(protected).decode("ascii")
 
 
 def decrypt_secret(value):
-    """Open a DPAPI-protected value saved by this Windows account."""
-    if not value.startswith(FIELD_PREFIX):
+    """Decrypt portable ciphertext or data protected by the current Windows user."""
+    if value.startswith(FIELD_PREFIX):
+        cipher = _portable_cipher()
+        if not cipher:
+            raise EncryptionError(
+                "APP_DATA_ENCRYPTION_KEY is required to decrypt saved private data."
+            )
+        try:
+            return cipher.decrypt(value[len(FIELD_PREFIX):].encode("ascii")).decode("utf-8")
+        except (InvalidToken, ValueError, UnicodeDecodeError) as error:
+            raise EncryptionError(
+                "APP_DATA_ENCRYPTION_KEY is incorrect or saved data is damaged."
+            ) from error
+    if not value.startswith(DPAPI_FIELD_PREFIX):
         raise EncryptionError(
             "Saved credentials use an older encryption format. Reconnect the account."
         )
     try:
-        protected = base64.urlsafe_b64decode(value[len(FIELD_PREFIX):])
+        protected = base64.urlsafe_b64decode(value[len(DPAPI_FIELD_PREFIX):])
         return _dpapi(protected, protect=False).decode("utf-8")
     except (OSError, ValueError, UnicodeDecodeError) as error:
         raise EncryptionError(
-            "Windows could not decrypt saved data for this account. Use the same Windows user profile."
+            "Windows could not decrypt saved data for this account. Use the original "
+            "Windows profile and set APP_DATA_ENCRYPTION_KEY to migrate it before moving hosts."
         ) from error
 
 
@@ -107,7 +141,7 @@ def decrypt_field(value):
     """Decrypt a private email field returned from SQLite."""
     if value is None:
         return None
-    if not value.startswith(FIELD_PREFIX):
+    if not value.startswith((FIELD_PREFIX, DPAPI_FIELD_PREFIX)):
         raise EncryptionError(
             "An email field is not encrypted. Restart the app to migrate saved emails."
         )
@@ -135,13 +169,18 @@ def _upgrade_field(value):
         if value is not None:
             decrypt_secret(value)
         return value, False
+    if value.startswith(DPAPI_FIELD_PREFIX):
+        plaintext = decrypt_secret(value)
+        if _portable_cipher():
+            return encrypt_field(plaintext), True
+        return value, False
     if value.startswith(LEGACY_FIELD_PREFIX):
         value = _decrypt_legacy(value[len(LEGACY_FIELD_PREFIX):])
     return encrypt_field(value), True
 
 
 def migrate_email_fields(connection):
-    """Upgrade saved mail/account data and verify the current Windows profile."""
+    """Upgrade saved mail/account data to the configured encryption format."""
     connection.execute("""
         CREATE TABLE IF NOT EXISTS encryption_metadata (
             name TEXT PRIMARY KEY,
@@ -157,12 +196,22 @@ def migrate_email_fields(connection):
             raise EncryptionError("The database encryption check failed.")
         return False
 
+    portable_migration = False
+    legacy_encryption = False
+    if saved_check and saved_check["value"].startswith(DPAPI_FIELD_PREFIX):
+        if decrypt_secret(saved_check["value"]).encode("utf-8") != KEY_CHECK:
+            raise EncryptionError("The database encryption check failed.")
+        portable_migration = _portable_cipher() is not None
+        if not portable_migration:
+            return False
+
     # Rows from the previous release use a manually supplied Fernet key.
     # Validate that key before changing anything, then discard old IMAP logins.
-    if saved_check:
+    elif saved_check:
         old_check = _decrypt_legacy(saved_check["value"])
         if old_check.encode("utf-8") != LEGACY_KEY_CHECK:
             raise EncryptionError("The old database encryption check failed.")
+        legacy_encryption = True
 
     changed = False
     rows = connection.execute(
@@ -184,13 +233,38 @@ def migrate_email_fields(connection):
             row["id"],
         ))
 
-    # Previous mailbox credentials were App Passwords, so require a fresh OAuth login.
-    old_accounts = connection.execute(
-        "SELECT COUNT(*) AS total FROM mail_accounts"
-    ).fetchone()["total"]
-    if old_accounts:
-        connection.execute("DELETE FROM mail_accounts")
-        changed = True
+    if portable_migration:
+        rows = connection.execute("""
+            SELECT user_id, provider, email, encrypted_token FROM mail_accounts
+        """).fetchall()
+        for row in rows:
+            email, email_changed = _upgrade_field(row["email"])
+            token = encrypt_secret(decrypt_secret(row["encrypted_token"]))
+            if email_changed or token != row["encrypted_token"]:
+                changed = True
+            connection.execute("""
+                UPDATE mail_accounts
+                SET email = ?, encrypted_token = ?
+                WHERE user_id IS ? AND provider = ?
+            """, (email, token, row["user_id"], row["provider"]))
+        rows = connection.execute("""
+            SELECT state, encrypted_verifier FROM oauth_login_transactions
+        """).fetchall()
+        for row in rows:
+            verifier = encrypt_secret(decrypt_secret(row["encrypted_verifier"]))
+            connection.execute("""
+                UPDATE oauth_login_transactions
+                SET encrypted_verifier = ? WHERE state = ?
+            """, (verifier, row["state"]))
+            changed = True
+    elif legacy_encryption or not saved_check:
+        # Older Fernet-era mailbox credentials were App Passwords; reconnect them.
+        old_accounts = connection.execute(
+            "SELECT COUNT(*) AS total FROM mail_accounts"
+        ).fetchone()["total"]
+        if old_accounts:
+            connection.execute("DELETE FROM mail_accounts")
+            changed = True
 
     connection.execute("""
         INSERT INTO encryption_metadata (name, value)

@@ -72,10 +72,10 @@ class MailboxSyncTests(unittest.TestCase):
                     "status": "inbox",
                     "reasons": [],
                 }),
-                patch.object(mailbox, "save_emails", side_effect=lambda batch: batches.append(list(batch))),
-                patch.object(mailbox, "_set_sync", side_effect=lambda status, processed=0, error=None: progress.append((status, processed))),
+                patch.object(mailbox, "save_emails", side_effect=lambda user_id, batch: batches.append(list(batch))),
+                patch.object(mailbox, "_set_sync", side_effect=lambda user_id, status, processed=0, error=None: progress.append((status, processed))),
             ):
-                mailbox._run_sync()
+                mailbox._run_sync("user-a")
         finally:
             if mailbox._sync_lock.locked():
                 mailbox._sync_lock.release()
