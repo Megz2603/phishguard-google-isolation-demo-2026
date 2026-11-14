@@ -29,7 +29,8 @@ and per-user settings as manually entered and Gmail messages. Screenshot
 validation accepts readable, cohesive message text even when OCR misses headers.
 The OCR crop retains the email subject and sender area while excluding some
 surrounding mail-client chrome, and repairs spaces inside recognized URLs.
-Large images are downscaled before OCR, which has a 30-second time limit.
+OCR input is cropped, re-encoded as a compressed JPEG, and downscaled for large
+images. Recognition is limited to one Tesseract thread with a 30-second timeout.
 Review the extracted text saved with the scan. OCR currently uses Tesseract's
 English language model.
 

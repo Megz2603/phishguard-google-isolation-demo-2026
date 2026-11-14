@@ -1,5 +1,6 @@
 import io
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import pytesseract
@@ -87,15 +88,24 @@ class ImageScannerTests(unittest.TestCase):
         self.assertTrue(any("suspicious sign-in or account route" in reason for reason in scan_result["reasons"]))
 
     def test_screenshot_crop_keeps_header_and_quarantines_afrikaans_phishing(self):
+        ocr_input = {}
+
+        def capture_ocr_input(image_path, **kwargs):
+            with Image.open(image_path) as image:
+                ocr_input["size"] = image.size
+                ocr_input["format"] = image.format
+            return AFRIKAANS_SCREENSHOT_OCR_TEXT
+
         with patch(
             "email_system.image_scanner.pytesseract.image_to_string",
-            return_value=AFRIKAANS_SCREENSHOT_OCR_TEXT,
-        ) as ocr:
+            side_effect=capture_ocr_input,
+        ):
             email = extract_email_from_image(
                 make_image_bytes(size=(1000, 600))
             )
 
-        self.assertEqual(ocr.call_args.args[0].size, (900, 498))
+        self.assertEqual(ocr_input["size"], (900, 498))
+        self.assertEqual(ocr_input["format"], "JPEG")
         self.assertEqual(email["subject"], "DRINGEND: U rekening is opgeskort")
         self.assertEqual(email["sender"], "Mikhail Govender")
         result = scan_email(
@@ -149,14 +159,26 @@ Sam"""
         ocr.assert_called_once()
 
     def test_downscales_large_screenshots_before_ocr(self):
+        ocr_input = {}
+
+        def capture_ocr_input(image_path, **kwargs):
+            with Image.open(image_path) as image:
+                ocr_input["size"] = image.size
+                ocr_input["format"] = image.format
+                ocr_input["file_size"] = Path(image_path).stat().st_size
+            ocr_input["timeout"] = kwargs["timeout"]
+            return EMAIL_TEXT
+
         with patch(
             "email_system.image_scanner.pytesseract.image_to_string",
-            return_value=EMAIL_TEXT,
-        ) as ocr:
+            side_effect=capture_ocr_input,
+        ):
             extract_email_from_image(make_image_bytes(size=(3000, 2000)))
 
-        self.assertEqual(max(ocr.call_args.args[0].size), 2400)
-        self.assertEqual(ocr.call_args.kwargs["timeout"], 30)
+        self.assertEqual(max(ocr_input["size"]), 2400)
+        self.assertEqual(ocr_input["format"], "JPEG")
+        self.assertLess(ocr_input["file_size"], 1_000_000)
+        self.assertEqual(ocr_input["timeout"], 30)
 
     def test_rejects_empty_ocr_result_from_an_image(self):
         with patch(

@@ -1,5 +1,7 @@
 import re
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytesseract
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -199,12 +201,15 @@ def extract_email_from_image(image_bytes):
         raise ImageScanError("The uploaded file is not a readable image.") from error
 
     try:
-        text = pytesseract.image_to_string(
-            image,
-            lang="eng",
-            config="--psm 6",
-            timeout=OCR_TIMEOUT_SECONDS,
-        )
+        with TemporaryDirectory(prefix="phishguard-ocr-") as temp_dir:
+            image_path = Path(temp_dir) / "email.jpg"
+            image.save(image_path, format="JPEG", quality=85, optimize=True)
+            text = pytesseract.image_to_string(
+                str(image_path),
+                lang="eng",
+                config="--psm 6",
+                timeout=OCR_TIMEOUT_SECONDS,
+            )
     except pytesseract.TesseractNotFoundError as error:
         raise ImageScanError(
             "Screenshot scanning is unavailable because the server OCR engine "
@@ -217,6 +222,10 @@ def extract_email_from_image(image_bytes):
     except RuntimeError as error:
         raise ImageScanError(
             "Text recognition took too long. Try a smaller, clearer screenshot."
+        ) from error
+    except OSError as error:
+        raise ImageScanError(
+            "The screenshot could not be prepared for text recognition."
         ) from error
 
     return _parse_email_text(text)
