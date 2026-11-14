@@ -148,6 +148,16 @@ Sam"""
         self.assertEqual(result["subject"], "Urgent account verification")
         ocr.assert_called_once()
 
+    def test_downscales_large_screenshots_before_ocr(self):
+        with patch(
+            "email_system.image_scanner.pytesseract.image_to_string",
+            return_value=EMAIL_TEXT,
+        ) as ocr:
+            extract_email_from_image(make_image_bytes(size=(3000, 2000)))
+
+        self.assertEqual(max(ocr.call_args.args[0].size), 2400)
+        self.assertEqual(ocr.call_args.kwargs["timeout"], 30)
+
     def test_rejects_empty_ocr_result_from_an_image(self):
         with patch(
             "email_system.image_scanner.pytesseract.image_to_string",

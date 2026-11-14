@@ -6,6 +6,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 MAX_IMAGE_PIXELS = 20_000_000
+MAX_OCR_IMAGE_DIMENSION = 2400
+OCR_TIMEOUT_SECONDS = 30
 SUPPORTED_FORMATS = {"JPEG", "PNG", "WEBP"}
 EMAIL_ADDRESS_PATTERN = re.compile(
     r"(?<![\w.+-])[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9-]+"
@@ -175,6 +177,16 @@ def extract_email_from_image(image_bytes):
                     int(image.width * 0.95),
                     int(image.height * 0.85),
                 ))
+            longest_dimension = max(image.size)
+            if longest_dimension > MAX_OCR_IMAGE_DIMENSION:
+                scale = MAX_OCR_IMAGE_DIMENSION / longest_dimension
+                image = image.resize(
+                    (
+                        max(1, round(image.width * scale)),
+                        max(1, round(image.height * scale)),
+                    ),
+                    Image.Resampling.LANCZOS,
+                )
     except ImageScanError:
         raise
     except (
@@ -191,7 +203,7 @@ def extract_email_from_image(image_bytes):
             image,
             lang="eng",
             config="--psm 6",
-            timeout=15,
+            timeout=OCR_TIMEOUT_SECONDS,
         )
     except pytesseract.TesseractNotFoundError as error:
         raise ImageScanError(
