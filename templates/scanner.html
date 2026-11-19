@@ -7,7 +7,7 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title data-i18n="emailSecurity">PhishGuard | Email security</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script src="{{ url_for('static', filename='language.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='language.js', v='20261119-safety') }}" defer></script>
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body data-guest-mode="{{ 'true' if is_guest else 'false' }}">

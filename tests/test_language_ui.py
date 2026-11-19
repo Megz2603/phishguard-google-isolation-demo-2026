@@ -128,6 +128,13 @@ class LanguageUiTests(unittest.TestCase):
                 value_count = len(re.findall(r'"(?:[^"\\]|\\.)*"', row))
                 self.assertEqual(value_count, key_count)
 
+    def test_scanner_busts_cached_language_catalog_after_translation_updates(self):
+        template = (ROOT / "templates" / "scanner.html").read_text(encoding="utf-8")
+        self.assertRegex(
+            template,
+            r"filename='language\.js', v='[^']+'",
+        )
+
     def test_scanner_has_safety_tabs_and_status_filter_buttons(self):
         template = (ROOT / "templates" / "scanner.html").read_text(encoding="utf-8")
         for topic in ("safe-online", "spot-phishing"):
