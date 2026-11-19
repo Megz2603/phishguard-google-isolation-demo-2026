@@ -100,6 +100,34 @@ class LanguageUiTests(unittest.TestCase):
         ))
         self.assertEqual(used - defined, set())
 
+    def test_safety_lessons_are_translated_for_every_supported_language(self):
+        language_codes = {language["code"] for language in LANGUAGES}
+        keys_match = re.search(
+            r"const safetyTextKeys = \[(.*?)\];",
+            LANGUAGE_SCRIPT,
+            re.S,
+        )
+        catalog_match = re.search(
+            r"const safetyText = \{(.*?)^\};",
+            LANGUAGE_SCRIPT,
+            re.S | re.M,
+        )
+        self.assertIsNotNone(keys_match)
+        self.assertIsNotNone(catalog_match)
+
+        keys = re.findall(r'"([^"]+)":|\"([^\"]+)\"', keys_match.group(1))
+        key_count = len(re.findall(r'"([^"]+)"', keys_match.group(1)))
+        rows = re.findall(
+            r"(?m)^  (\w+): \[(.*?)^\s{2}\]",
+            catalog_match.group(1),
+            re.S,
+        )
+        self.assertEqual({code for code, _ in rows}, language_codes)
+        for code, row in rows:
+            with self.subTest(language=code):
+                value_count = len(re.findall(r'"(?:[^"\\]|\\.)*"', row))
+                self.assertEqual(value_count, key_count)
+
     def test_scanner_has_safety_tabs_and_status_filter_buttons(self):
         template = (ROOT / "templates" / "scanner.html").read_text(encoding="utf-8")
         for topic in ("safe-online", "spot-phishing"):
